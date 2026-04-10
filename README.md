@@ -2,7 +2,7 @@
 
 Local-first code graph analysis and project Q&A for real repositories.
 
-`opencodeviz` is the npm package name used for publishing.
+`codeviz-ai` is the npm package name used for publishing.
 `codeviz` remains the CLI command.
 
 ---
@@ -54,10 +54,10 @@ Python runtime dependencies are defined in [pyproject.toml](/Users/hmj/Desktop/p
 
 ### Package Name and CLI Name
 
-- npm package: `opencodeviz`
+- npm package: `codeviz-ai`
 - CLI command: `codeviz`
 
-This means installation uses `opencodeviz`, but all runtime commands still use `codeviz`.
+This means installation uses `codeviz-ai`, but all runtime commands still use `codeviz`.
 
 ### Installation
 
@@ -88,7 +88,7 @@ python -m codeviz ask /path/to/project "What does this service layer do?"
 Install from the published package:
 
 ```bash
-npm install -g opencodeviz
+npm install -g codeviz-ai
 ```
 
 Or install from the local repository:
@@ -373,10 +373,10 @@ Python 运行时依赖定义在 [pyproject.toml](/Users/hmj/Desktop/project/show
 
 ### 包名与命令名
 
-- npm 包名：`opencodeviz`
+- npm 包名：`codeviz-ai`
 - CLI 命令：`codeviz`
 
-也就是说，安装时使用 `opencodeviz`，运行时命令仍然是 `codeviz`。
+也就是说，安装时使用 `codeviz-ai`，运行时命令仍然是 `codeviz`。
 
 ### 安装部署
 
@@ -407,7 +407,7 @@ python -m codeviz ask /path/to/project "这个服务层负责什么？"
 安装发布后的 npm 包：
 
 ```bash
-npm install -g opencodeviz
+npm install -g codeviz-ai
 ```
 
 如果是本地仓库安装：
