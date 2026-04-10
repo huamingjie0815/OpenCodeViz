@@ -5,10 +5,22 @@ Local-first code graph analysis and project Q&A for real repositories.
 `codeviz-ai` is the npm package name used for publishing.
 `codeviz` remains the CLI command.
 
+[![npm version](https://img.shields.io/npm/v/codeviz-ai?label=npm%20(stable))](https://www.npmjs.com/package/codeviz-ai)
+[![minzipped size](https://img.shields.io/bundlephobia/minzip/codeviz-ai)](https://bundlephobia.com/package/codeviz-ai)
+[![npm downloads](https://img.shields.io/npm/dm/codeviz-ai)](https://www.npmjs.com/package/codeviz-ai)
+[![license](https://img.shields.io/npm/l/codeviz-ai)](https://www.npmjs.com/package/codeviz-ai)
+
+![OpenCodeViz UI](docs/images/ui-overview.png)
+
+Language:
+[English](#english) | [中文](#中文)
 
 ---
 
 ## English
+
+<details open>
+<summary><strong>Open English</strong></summary>
 
 ### Overview
 
@@ -333,9 +345,14 @@ python -m codeviz --help
 - `reanalyze` does not yet have independent semantics
 - The web UI is bundled static content, not a separate frontend app
 
+</details>
+
 ---
 
 ## 中文
+
+<details>
+<summary><strong>展开中文</strong></summary>
 
 ### 项目介绍
 
@@ -655,3 +672,5 @@ python -m codeviz --help
 - 大于 `50KB` 的源码文件会被跳过
 - `reanalyze` 目前还没有独立语义
 - 前端是内置静态资源，不是独立前端工程
+
+</details>
