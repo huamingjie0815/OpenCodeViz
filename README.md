@@ -5,6 +5,9 @@ Local-first code graph analysis and project Q&A for real repositories.
 `codeviz-ai` is the npm package name used for publishing.
 `codeviz` remains the CLI command.
 
+![Uploading d2aa6a6d959e9055a3c89d7e2a08c69d.png…]()
+
+
 ---
 
 ## English
