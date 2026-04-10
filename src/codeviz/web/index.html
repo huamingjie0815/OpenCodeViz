@@ -31,6 +31,9 @@
             --mono: "JetBrains Mono", "Fira Code", "SF Mono", "Menlo", monospace;
             --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             --radius: 6px;
+            --left-sidebar-width: 320px;
+            --right-sidebar-width: 360px;
+            --sidebar-collapsed-width: 40px;
         }
 
         html,
@@ -50,13 +53,13 @@
         #app {
             display: grid;
             grid-template-rows: 48px 1fr;
-            grid-template-columns: 1fr 340px;
+            grid-template-columns: var(--left-sidebar-width) 6px minmax(0, 1fr) 6px var(--right-sidebar-width);
             height: 100vh;
             overflow: hidden
         }
 
         header {
-            grid-column: 1/3;
+            grid-column: 1/6;
             display: flex;
             align-items: center;
             gap: 12px;
@@ -95,6 +98,7 @@
         }
 
         #graph-area {
+            grid-column: 3;
             position: relative;
             overflow: hidden;
             background: var(--bg)
@@ -130,13 +134,138 @@
             border-radius: 50%
         }
 
-        /* sidebar */
-        #sidebar {
+        /* sidebars */
+        .side-panel {
             display: flex;
             flex-direction: column;
-            border-left: 1px solid var(--border);
             background: var(--bg2);
             overflow: hidden
+        }
+
+        #left-sidebar {
+            grid-column: 1;
+            border-right: 1px solid var(--border)
+        }
+
+        #right-sidebar {
+            grid-column: 5;
+            border-left: 1px solid var(--border)
+        }
+
+        #app.sidebar-left-collapsed {
+            grid-template-columns: var(--sidebar-collapsed-width) 6px minmax(0, 1fr) 6px var(--right-sidebar-width)
+        }
+
+        #app.sidebar-right-collapsed {
+            grid-template-columns: var(--left-sidebar-width) 6px minmax(0, 1fr) 6px var(--sidebar-collapsed-width)
+        }
+
+        #app.sidebar-left-collapsed.sidebar-right-collapsed {
+            grid-template-columns: var(--sidebar-collapsed-width) 6px minmax(0, 1fr) 6px var(--sidebar-collapsed-width)
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px
+        }
+
+        .sidebar-header h3 {
+            margin-bottom: 0
+        }
+
+        .sidebar-toggle {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg3);
+            color: var(--fg2);
+            cursor: pointer;
+            font-size: 12px
+        }
+
+        .sidebar-toggle:hover {
+            color: var(--fg);
+            border-color: var(--accent)
+        }
+
+        .sidebar-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1
+        }
+
+        .sidebar-collapsed-label {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            letter-spacing: 1px;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--fg2);
+            padding: 12px 0;
+            gap: 8px;
+            height: 100%
+        }
+
+        .sidebar-collapsed-label .sidebar-toggle {
+            transform: rotate(90deg)
+        }
+
+        #app.sidebar-left-collapsed #left-sidebar .sidebar-body,
+        #app.sidebar-right-collapsed #right-sidebar .sidebar-body {
+            display: none
+        }
+
+        #app.sidebar-left-collapsed #left-sidebar .sidebar-collapsed-label,
+        #app.sidebar-right-collapsed #right-sidebar .sidebar-collapsed-label {
+            display: flex
+        }
+
+        .sidebar-resizer {
+            position: relative;
+            cursor: col-resize;
+            background: var(--bg);
+            transition: background .15s ease
+        }
+
+        .sidebar-resizer::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            margin: auto;
+            width: 2px;
+            height: 100%;
+            background: var(--border)
+        }
+
+        .sidebar-resizer:hover,
+        .sidebar-resizer.dragging {
+            background: rgba(88, 166, 255, .08)
+        }
+
+        .sidebar-resizer:hover::after,
+        .sidebar-resizer.dragging::after {
+            background: var(--accent)
+        }
+
+        #left-resizer {
+            grid-column: 2
+        }
+
+        #right-resizer {
+            grid-column: 4
+        }
+
+        #app.sidebar-left-collapsed #left-resizer,
+        #app.sidebar-right-collapsed #right-resizer {
+            cursor: default
         }
 
         .sidebar-section {
@@ -254,44 +383,11 @@
             color: var(--accent)
         }
 
-        /* chat */
-        #chat-toggle {
-            position: fixed;
-            bottom: 16px;
-            right: 356px;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: var(--accent);
-            color: #000;
-            border: none;
-            cursor: pointer;
-            font-size: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: var(--shadow);
-            z-index: 10;
-            transition: bottom .25s ease
-        }
-
         #chat-panel {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 340px;
-            height: 0;
-            background: var(--bg2);
-            border-top: 1px solid var(--border);
-            transition: height .25s ease;
-            overflow: hidden;
-            z-index: 9;
             display: flex;
-            flex-direction: column
-        }
-
-        #chat-panel.open {
-            height: 320px
+            flex-direction: column;
+            min-height: 0;
+            height: 100%
         }
 
         #chat-header {
@@ -353,6 +449,12 @@
             color: var(--fg2);
             font-style: italic;
             display: flex;
+            flex-direction: column;
+            gap: 6px
+        }
+
+        .thinking-header {
+            display: flex;
             align-items: center;
             gap: 6px
         }
@@ -387,6 +489,58 @@
         .thinking-timer {
             font-size: 11px;
             opacity: .6
+        }
+
+        .thinking-step-count {
+            font-size: 11px;
+            opacity: .7;
+            font-style: normal;
+            color: var(--accent);
+            margin-left: 2px
+        }
+
+        .thinking-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-top: 2px;
+            max-height: 160px;
+            overflow-y: auto
+        }
+
+        .thinking-step {
+            font-size: 11px;
+            font-style: normal;
+            color: var(--fg2);
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, .03);
+            animation: step-fade-in .3s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .thinking-step.tool_call {
+            color: var(--accent);
+            background: rgba(88, 166, 255, .08)
+        }
+
+        .thinking-step.tool_result {
+            color: var(--green);
+            background: rgba(63, 185, 80, .08)
+        }
+
+        @keyframes step-fade-in {
+            from {
+                opacity: 0;
+                transform: translateY(4px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
         }
 
         .chat-msg.assistant .bubble {
@@ -481,6 +635,62 @@
             font-weight: 600
         }
 
+        @media (max-width: 1100px) {
+            #app {
+                --left-sidebar-width: 280px;
+                --right-sidebar-width: 320px
+            }
+        }
+
+        @media (max-width: 900px) {
+            #app {
+                grid-template-rows: 48px auto minmax(280px, 1fr) auto;
+                grid-template-columns: 1fr
+            }
+
+            header,
+            #left-sidebar,
+            #left-resizer,
+            #graph-area,
+            #right-resizer,
+            #right-sidebar {
+                grid-column: 1
+            }
+
+            header {
+                grid-row: 1
+            }
+
+            #left-sidebar {
+                grid-row: 2;
+                border-right: none;
+                border-bottom: 1px solid var(--border)
+            }
+
+            #left-resizer,
+            #right-resizer {
+                display: none
+            }
+
+            #graph-area {
+                grid-row: 3;
+                min-height: 0
+            }
+
+            #right-sidebar {
+                grid-row: 4;
+                border-left: none;
+                border-top: 1px solid var(--border);
+                min-height: 320px
+            }
+
+            #app.sidebar-left-collapsed,
+            #app.sidebar-right-collapsed,
+            #app.sidebar-left-collapsed.sidebar-right-collapsed {
+                grid-template-columns: 1fr
+            }
+        }
+
         /* events log */
         #events-bar {
             position: absolute;
@@ -521,7 +731,7 @@
 
         /* tooltip */
         .tooltip {
-            position: absolute;
+            position: fixed;
             pointer-events: none;
             padding: 8px 12px;
             background: var(--bg2);
@@ -563,9 +773,34 @@
             </div>
         </header>
 
+        <div id="left-sidebar" class="side-panel">
+            <div class="sidebar-body">
+                <div class="sidebar-section">
+                    <div class="sidebar-header">
+                        <h3>Search</h3>
+                        <button id="left-sidebar-toggle" class="sidebar-toggle" type="button" title="Collapse search sidebar">◀</button>
+                    </div>
+                    <input id="search-input" type="text" placeholder="Search entities...">
+                    <div id="search-results"></div>
+                </div>
+                <div id="detail-panel" class="sidebar-section" style="border-bottom:none">
+                    <p style="color:var(--fg2);font-size:12px">Click a node to see details</p>
+                </div>
+            </div>
+            <div class="sidebar-collapsed-label">
+                <button id="left-sidebar-expand" class="sidebar-toggle" type="button" title="Expand search sidebar">▶</button>
+                <span>Search</span>
+            </div>
+        </div>
+        <div id="left-resizer" class="sidebar-resizer" aria-hidden="true"></div>
+
         <div id="graph-area">
             <svg id="graph-svg"></svg>
             <div id="legend">
+                <label class="legend-item" style="cursor:pointer;gap:6px;align-items:center;display:flex;">
+                    <input id="label-toggle" type="checkbox" checked>
+                    <span>label</span>
+                </label>
                 <div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>class</div>
                 <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>function</div>
                 <div class="legend-item"><span class="legend-dot" style="background:var(--purple)"></span>method</div>
@@ -575,30 +810,27 @@
             </div>
             <div class="tooltip" id="tooltip" style="display:none"></div>
         </div>
+        <div id="right-resizer" class="sidebar-resizer" aria-hidden="true"></div>
 
-        <div id="sidebar">
-            <div class="sidebar-section">
-                <h3>Search</h3>
-                <input id="search-input" type="text" placeholder="Search entities...">
-                <div id="search-results"></div>
+        <div id="right-sidebar" class="side-panel">
+            <div class="sidebar-body">
+                <div id="chat-panel">
+                    <div id="chat-header">
+                        <span>Project Q&A</span>
+                        <button id="right-sidebar-toggle" class="sidebar-toggle" type="button" title="Collapse Q&A sidebar">▶</button>
+                    </div>
+                    <div id="chat-messages"></div>
+                    <form id="chat-form">
+                        <input id="chat-input" type="text" placeholder="Ask about this codebase..." autocomplete="off">
+                        <button type="submit">Send</button>
+                    </form>
+                </div>
             </div>
-            <div id="detail-panel" class="sidebar-section" style="border-bottom:none">
-                <p style="color:var(--fg2);font-size:12px">Click a node to see details</p>
+            <div class="sidebar-collapsed-label">
+                <button id="right-sidebar-expand" class="sidebar-toggle" type="button" title="Expand Q&A sidebar">◀</button>
+                <span>Q&A</span>
             </div>
         </div>
-    </div>
-
-    <button id="chat-toggle" title="Chat">💬</button>
-    <div id="chat-panel">
-        <div id="chat-header">
-            <span>Project Q&A</span>
-            <button id="chat-close">&times;</button>
-        </div>
-        <div id="chat-messages"></div>
-        <form id="chat-form">
-            <input id="chat-input" type="text" placeholder="Ask about this codebase..." autocomplete="off">
-            <button type="submit">Send</button>
-        </form>
     </div>
 
     <script src="vendor/d3.min.js"></script>

@@ -77,8 +77,11 @@
   let selectedNode = null;
   let searchTimeout = null;
   let showLabels = true;
+  let leftSidebarWidth = 320;
+  let rightSidebarWidth = 360;
 
   // -- DOM refs ---------------------------------------------------------
+  const app = document.getElementById("app");
   const svg = d3.select("#graph-svg");
   const tooltip = document.getElementById("tooltip");
   const statusBadge = document.getElementById("status-badge");
@@ -89,12 +92,16 @@
   const searchResults = document.getElementById("search-results");
   const detailPanel = document.getElementById("detail-panel");
   const labelToggle = document.getElementById("label-toggle");
-  const chatToggle = document.getElementById("chat-toggle");
   const chatPanel = document.getElementById("chat-panel");
-  const chatClose = document.getElementById("chat-close");
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
   const chatMessages = document.getElementById("chat-messages");
+  const leftSidebarToggle = document.getElementById("left-sidebar-toggle");
+  const leftSidebarExpand = document.getElementById("left-sidebar-expand");
+  const rightSidebarToggle = document.getElementById("right-sidebar-toggle");
+  const rightSidebarExpand = document.getElementById("right-sidebar-expand");
+  const leftResizer = document.getElementById("left-resizer");
+  const rightResizer = document.getElementById("right-resizer");
 
   // -- D3 setup ---------------------------------------------------------
   const width = () => document.getElementById("graph-area").clientWidth;
@@ -246,11 +253,87 @@
     if (d.description) lines.push(d.description);
     tooltip.textContent = lines.join("\n");
     tooltip.style.display = "block";
-    tooltip.style.left = event.pageX + 12 + "px";
-    tooltip.style.top = event.pageY - 20 + "px";
+    const padding = 16;
+    const rect = tooltip.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - padding;
+    const maxTop = window.innerHeight - rect.height - padding;
+    const left = Math.min(Math.max(event.clientX + 12, padding), Math.max(padding, maxLeft));
+    const top = Math.min(Math.max(event.clientY - 20, padding), Math.max(padding, maxTop));
+    tooltip.style.left = left + "px";
+    tooltip.style.top = top + "px";
   }
   function hideTooltip() {
     tooltip.style.display = "none";
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function setSidebarWidth(side, next) {
+    const min = 220;
+    const max = Math.max(min, Math.floor(window.innerWidth * 0.45));
+    const nextWidth = clamp(Math.round(next), min, max);
+    if (side === "left") {
+      leftSidebarWidth = nextWidth;
+      document.documentElement.style.setProperty("--left-sidebar-width", `${nextWidth}px`);
+    } else {
+      rightSidebarWidth = nextWidth;
+      document.documentElement.style.setProperty("--right-sidebar-width", `${nextWidth}px`);
+    }
+    if (simulation) {
+      simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
+      simulation.alpha(0.1).restart();
+    }
+  }
+
+  function toggleSidebar(side, collapsed) {
+    const className = side === "left" ? "sidebar-left-collapsed" : "sidebar-right-collapsed";
+    app.classList.toggle(className, collapsed);
+    if (simulation) {
+      simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
+      simulation.alpha(0.1).restart();
+    }
+  }
+
+  function initSidebarControls() {
+    leftSidebarToggle.addEventListener("click", () => toggleSidebar("left", true));
+    leftSidebarExpand.addEventListener("click", () => toggleSidebar("left", false));
+    rightSidebarToggle.addEventListener("click", () => toggleSidebar("right", true));
+    rightSidebarExpand.addEventListener("click", () => toggleSidebar("right", false));
+
+    attachResize(leftResizer, "left");
+    attachResize(rightResizer, "right");
+  }
+
+  function attachResize(handle, side) {
+    handle.addEventListener("pointerdown", (event) => {
+      const collapsed = app.classList.contains(side === "left" ? "sidebar-left-collapsed" : "sidebar-right-collapsed");
+      if (collapsed || window.innerWidth <= 900) return;
+
+      event.preventDefault();
+      handle.classList.add("dragging");
+      handle.setPointerCapture(event.pointerId);
+
+      const onMove = (moveEvent) => {
+        if (side === "left") {
+          setSidebarWidth("left", moveEvent.clientX);
+        } else {
+          setSidebarWidth("right", window.innerWidth - moveEvent.clientX);
+        }
+      };
+
+      const onEnd = () => {
+        handle.classList.remove("dragging");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onEnd);
+        handle.removeEventListener("pointercancel", onEnd);
+      };
+
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onEnd);
+      handle.addEventListener("pointercancel", onEnd);
+    });
   }
 
   // -- Node selection ---------------------------------------------------
@@ -519,20 +602,6 @@
   // -- Chat -------------------------------------------------------------
   let _thinkingTimer = null;
 
-  function updateTogglePosition() {
-    chatToggle.style.bottom = chatPanel.classList.contains("open") ? "336px" : "16px";
-  }
-
-  chatToggle.addEventListener("click", () => {
-    chatPanel.classList.toggle("open");
-    updateTogglePosition();
-    if (chatPanel.classList.contains("open")) chatInput.focus();
-  });
-  chatClose.addEventListener("click", () => {
-    chatPanel.classList.remove("open");
-    updateTogglePosition();
-  });
-
   chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const question = chatInput.value.trim();
@@ -548,10 +617,10 @@
     })
       .then((r) => r.json())
       .then((data) => {
-        removeThinking();
         if (data.ok && data.turn_id) {
           pollChatTurn(data.turn_id);
         } else {
+          removeThinking();
           appendChatMsg("assistant", data.error || "Error");
         }
       })
@@ -562,8 +631,80 @@
   });
 
   function pollChatTurn(turnId) {
-    let delay = 200;
-    const maxDelay = 3000;
+    // Try SSE streaming first, fall back to polling
+    if (typeof EventSource !== "undefined") {
+      return streamChatTurn(turnId);
+    }
+    legacyPollChatTurn(turnId);
+  }
+
+  function streamChatTurn(turnId) {
+    const source = new EventSource(`/api/chat/stream/${turnId}`);
+    let stepCount = 0;
+
+    source.addEventListener("step", (e) => {
+      try {
+        const step = JSON.parse(e.data);
+        stepCount++;
+        updateThinkingSteps(step, stepCount);
+      } catch (_) { }
+    });
+
+    source.addEventListener("done", (e) => {
+      source.close();
+      try {
+        const data = JSON.parse(e.data);
+        removeThinking();
+        appendChatMsg("assistant", data.answer || "No answer");
+      } catch (_) {
+        removeThinking();
+        appendChatMsg("assistant", "Failed to parse response");
+      }
+    });
+
+    source.addEventListener("error", (e) => {
+      source.close();
+      // Fall back to polling if SSE fails, passing already-received step count
+      legacyPollChatTurn(turnId, stepCount);
+    });
+  }
+
+  function updateThinkingSteps(step, count) {
+    const thinkingEl = chatMessages.querySelector(".chat-msg.thinking");
+    if (!thinkingEl) return;
+    const bubble = thinkingEl.querySelector(".bubble");
+    if (!bubble) return;
+
+    // Update step counter
+    const counterEl = bubble.querySelector(".thinking-step-count");
+    if (counterEl) {
+      counterEl.textContent = `Step ${count}`;
+    }
+
+    // Add step line
+    let stepsContainer = bubble.querySelector(".thinking-steps");
+    if (!stepsContainer) {
+      stepsContainer = document.createElement("div");
+      stepsContainer.className = "thinking-steps";
+      bubble.appendChild(stepsContainer);
+    }
+
+    const stepEl = document.createElement("div");
+    stepEl.className = `thinking-step ${step.type || "thinking"}`;
+
+    const icon = step.type === "tool_call" ? "\u{1F50D}" : step.type === "tool_result" ? "\u2705" : "\u{1F4AD}";
+    stepEl.textContent = `${icon} ${step.summary || "Processing..."}`;
+    stepsContainer.appendChild(stepEl);
+
+    // Keep only last 8 steps visible
+    while (stepsContainer.children.length > 8) {
+      stepsContainer.removeChild(stepsContainer.firstChild);
+    }
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function legacyPollChatTurn(turnId, _stepsSeen) {
     const poll = () => {
       fetch(`/api/chat/turn/${turnId}`)
         .then((r) => r.json())
@@ -572,8 +713,7 @@
             removeThinking();
             appendChatMsg("assistant", data.answer || "No answer");
           } else {
-            delay = Math.min(delay * 1.5, maxDelay);
-            setTimeout(poll, delay);
+            setTimeout(poll, 1500);
           }
         })
         .catch(() => {
@@ -592,8 +732,11 @@
 
     if (role === "thinking") {
       bubble.innerHTML =
-        `Thinking<span class="thinking-dots"><span>●</span><span>●</span><span>●</span></span>` +
-        `<span class="thinking-timer">0s</span>`;
+        `<div class="thinking-header">` +
+        `Thinking<span class="thinking-dots"><span>\u25CF</span><span>\u25CF</span><span>\u25CF</span></span>` +
+        `<span class="thinking-step-count"></span>` +
+        `<span class="thinking-timer">0s</span>` +
+        `</div>`;
       const start = Date.now();
       _thinkingTimer = setInterval(() => {
         const el = chatMessages.querySelector(".thinking-timer");
@@ -622,12 +765,15 @@
 
   // -- Init -------------------------------------------------------------
   window.addEventListener("resize", () => {
+    setSidebarWidth("left", leftSidebarWidth);
+    setSidebarWidth("right", rightSidebarWidth);
     if (simulation) {
       simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
       simulation.alpha(0.1).restart();
     }
   });
 
+  initSidebarControls();
   loadInitialGraph();
   connectSSE();
 })();
