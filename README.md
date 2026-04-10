@@ -61,29 +61,7 @@ This means installation uses `codeviz-ai`, but all runtime commands still use `c
 
 ### Installation
 
-#### Option 1: Python package only
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-To enable the `deepagents`-powered Q&A runtime:
-
-```bash
-pip install -e '.[runtime]'
-```
-
-Then run:
-
-```bash
-python -m codeviz analyze /path/to/project --no-browser
-python -m codeviz open /path/to/project --no-browser
-python -m codeviz ask /path/to/project "What does this service layer do?"
-```
-
-#### Option 2: npm CLI install
+#### Option 1: npm CLI install
 
 Install from the published package:
 
@@ -119,6 +97,38 @@ Default global config directory:
 Override with:
 
 - `CODEVIZ_CONFIG_HOME`
+
+#### Option 2: Local Python install from this repository
+
+Use this mode if you have already cloned this repository and want to run or develop OpenCodeViz locally.
+
+```bash
+git clone git@github.com:huamingjie0815/OpenCodeViz.git
+cd OpenCodeViz
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+If you do not want to clone first, you can also install directly from GitHub:
+
+```bash
+pip install "git+https://github.com/huamingjie0815/OpenCodeViz.git"
+```
+
+To enable the `deepagents`-powered Q&A runtime:
+
+```bash
+pip install -e '.[runtime]'
+```
+
+Then run:
+
+```bash
+python -m codeviz analyze /path/to/project --no-browser
+python -m codeviz open /path/to/project --no-browser
+python -m codeviz ask /path/to/project "What does this service layer do?"
+```
 
 ### Deployment and Publish
 
@@ -380,29 +390,7 @@ Python 运行时依赖定义在 [pyproject.toml](/Users/hmj/Desktop/project/show
 
 ### 安装部署
 
-#### 方式一：只作为 Python 包使用
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-如果要启用基于 `deepagents` 的问答运行时：
-
-```bash
-pip install -e '.[runtime]'
-```
-
-然后可以直接运行：
-
-```bash
-python -m codeviz analyze /path/to/project --no-browser
-python -m codeviz open /path/to/project --no-browser
-python -m codeviz ask /path/to/project "这个服务层负责什么？"
-```
-
-#### 方式二：作为 npm CLI 安装
+#### 方式一：作为 npm CLI 安装
 
 安装发布后的 npm 包：
 
@@ -436,6 +424,38 @@ codeviz setup
 - Windows: `%APPDATA%/codeviz/`
 
 可通过 `CODEVIZ_CONFIG_HOME` 覆盖。
+
+#### 方式二：从当前仓库本地安装 Python 包
+
+这种方式适合你已经 `git clone` 了本仓库，并且希望在本地运行或参与开发。
+
+```bash
+git clone git@github.com:huamingjie0815/OpenCodeViz.git
+cd OpenCodeViz
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+如果你不想先 clone，也可以直接从 GitHub 安装：
+
+```bash
+pip install "git+https://github.com/huamingjie0815/OpenCodeViz.git"
+```
+
+如果要启用基于 `deepagents` 的问答运行时：
+
+```bash
+pip install -e '.[runtime]'
+```
+
+然后可以直接运行：
+
+```bash
+python -m codeviz analyze /path/to/project --no-browser
+python -m codeviz open /path/to/project --no-browser
+python -m codeviz ask /path/to/project "这个服务层负责什么？"
+```
 
 #### npm 发布
 
