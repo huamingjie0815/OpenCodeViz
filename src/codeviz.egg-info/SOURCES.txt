@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/codeviz/__init__.py
@@ -25,6 +26,8 @@ src/codeviz/web/index.html
 tests/test_cli.py
 tests/test_fingerprint.py
 tests/test_fixtures.py
+tests/test_import_resolution.py
 tests/test_port_selection.py
 tests/test_project_integration.py
+tests/test_qa_streaming.py
 tests/test_storage.py

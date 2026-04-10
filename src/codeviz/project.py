@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 import webbrowser
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -225,10 +224,12 @@ class CodeVizProject:
             "status": "thinking",
             "created_at": created_at,
             "version_id": meta.run_id if meta else "",
+            "steps": [],
         }
         save_chat_turn(self.status, turn)
 
-        _QA_TIMEOUT = 90  # seconds
+        status = self.status
+        turn_lock = threading.Lock()
 
         def worker():
             try:
@@ -237,26 +238,26 @@ class CodeVizProject:
                     with self._analysis_lock:
                         analyze_project(self.root, self.status, self.config)
 
+                def on_step(step: dict):
+                    with turn_lock:
+                        turn["steps"].append(step)
+                        save_chat_turn(status, turn)
+
                 agent = ProjectQAAgent(self.root, self.status, self.config)
-                with ThreadPoolExecutor(max_workers=1) as _pool:
-                    _future = _pool.submit(agent.ask, question, session_id)
-                    try:
-                        result = _future.result(timeout=_QA_TIMEOUT)
-                    except FuturesTimeoutError:
-                        result = {
-                            "answer": f"Request timed out after {_QA_TIMEOUT} seconds. Try asking a more specific question.",
-                            "citations": [],
-                        }
-                turn["answer"] = result.get("answer", "")
-                turn["citations"] = result.get("citations", [])
-                turn["status"] = "completed"
+                result = agent.ask(question, session_id=session_id, on_step=on_step)
+                with turn_lock:
+                    turn["answer"] = result.get("answer", "")
+                    turn["citations"] = result.get("citations", [])
+                    turn["status"] = "completed"
             except Exception as exc:
-                turn["answer"] = f"Error: {exc}"
-                turn["status"] = "failed"
+                with turn_lock:
+                    turn["answer"] = f"Error: {exc}"
+                    turn["status"] = "failed"
             save_chat_turn(self.status, turn)
 
         thread = threading.Thread(target=worker, daemon=True)
         with self._chat_lock:
+            self._chat_threads = {tid: t for tid, t in self._chat_threads.items() if t.is_alive()}
             self._chat_threads[turn_id] = thread
         thread.start()
 

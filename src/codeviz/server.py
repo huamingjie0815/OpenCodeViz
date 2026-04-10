@@ -64,6 +64,10 @@ class CodeVizRequestHandler(SimpleHTTPRequestHandler):
                 payload = {"ok": False, "error": "turn not found"}
             return self._send_json(payload)
 
+        if parsed.path.startswith("/api/chat/stream/"):
+            turn_id = parsed.path.split("/")[-1]
+            return self._stream_chat_turn(turn_id)
+
         return super().do_GET()
 
     def do_POST(self) -> None:
@@ -124,6 +128,50 @@ class CodeVizRequestHandler(SimpleHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False)
         self.wfile.write(f"event: {event_name}\n".encode("utf-8"))
         self.wfile.write(f"data: {body}\n\n".encode("utf-8"))
+
+    def _stream_chat_turn(self, turn_id: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.flush()
+
+        steps_sent = 0
+        max_polls = 240  # 2 minutes at 0.5 s per poll
+        polls = 0
+        try:
+            while polls < max_polls:
+                polls += 1
+                payload = self.project.chat_turn_payload(turn_id)
+                if payload is None:
+                    self._write_sse("error", {"error": "turn not found"})
+                    self.wfile.flush()
+                    break
+
+                steps = payload.get("steps", [])
+                for step in steps[steps_sent:]:
+                    self._write_sse("step", step)
+                steps_sent = len(steps)
+
+                status = payload.get("status", "thinking")
+                if status == "completed":
+                    self._write_sse("done", {"answer": payload.get("answer", ""), "status": "completed"})
+                    self.wfile.flush()
+                    break
+                elif status == "failed":
+                    self._write_sse("done", {"answer": payload.get("answer", ""), "status": "failed"})
+                    self.wfile.flush()
+                    break
+
+                self.wfile.flush()
+                time.sleep(0.5)
+            # Timed out waiting for worker to finish
+            self._write_sse("error", {"error": "chat turn timed out"})
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
 
 class CodeVizServer:
