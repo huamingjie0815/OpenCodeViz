@@ -39,6 +39,15 @@
     constant: 5,
     decorator: 6,
   };
+  const DEGREE_THRESHOLDS = {
+    medium: 5,
+    high: 10,
+  };
+  const DEGREE_SCALE = {
+    base: 1,
+    medium: 1.45,
+    high: 2,
+  };
   const LANG_COLORS = {
     javascript: "#f1e05a",
     typescript: "#3178c6",
@@ -67,6 +76,7 @@
   let simulation = null;
   let selectedNode = null;
   let searchTimeout = null;
+  let showLabels = true;
 
   // -- DOM refs ---------------------------------------------------------
   const svg = d3.select("#graph-svg");
@@ -78,6 +88,7 @@
   const searchInput = document.getElementById("search-input");
   const searchResults = document.getElementById("search-results");
   const detailPanel = document.getElementById("detail-panel");
+  const labelToggle = document.getElementById("label-toggle");
   const chatToggle = document.getElementById("chat-toggle");
   const chatPanel = document.getElementById("chat-panel");
   const chatClose = document.getElementById("chat-close");
@@ -98,13 +109,38 @@
   });
   svg.call(zoom);
 
+  function getNodeTier(degree) {
+    if (degree >= DEGREE_THRESHOLDS.high) return "high";
+    if (degree >= DEGREE_THRESHOLDS.medium) return "medium";
+    return "base";
+  }
+
+  function getNodeRadius(node) {
+    const baseRadius = TYPE_RADIUS[node.type] || 6;
+    return baseRadius * DEGREE_SCALE[node.degreeTier || "base"];
+  }
+
+  function updateNodeDegrees() {
+    const degreeMap = new Map(nodes.map((node) => [node.id, 0]));
+    links.forEach((link) => {
+      const sourceId = typeof link.source === "object" ? link.source.id : link.source;
+      const targetId = typeof link.target === "object" ? link.target.id : link.target;
+      degreeMap.set(sourceId, (degreeMap.get(sourceId) || 0) + 1);
+      degreeMap.set(targetId, (degreeMap.get(targetId) || 0) + 1);
+    });
+    nodes.forEach((node) => {
+      node.degree = degreeMap.get(node.id) || 0;
+      node.degreeTier = getNodeTier(node.degree);
+    });
+  }
+
   function initSimulation() {
     simulation = d3
       .forceSimulation(nodes)
       .force("link", d3.forceLink(links).id((d) => d.id).distance(60))
       .force("charge", d3.forceManyBody().strength(-120))
       .force("center", d3.forceCenter(width() / 2, height() / 2))
-      .force("collision", d3.forceCollide().radius((d) => (TYPE_RADIUS[d.type] || 6) + 2))
+      .force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 6))
       .on("tick", ticked);
   }
 
@@ -122,6 +158,8 @@
   }
 
   function renderGraph() {
+    updateNodeDegrees();
+
     // links
     const linkSel = linkGroup.selectAll("line").data(links, (d) => d.id);
     linkSel.exit().remove();
@@ -143,21 +181,31 @@
 
     enter
       .append("circle")
-      .attr("r", (d) => TYPE_RADIUS[d.type] || 6)
       .attr("fill", (d) => TYPE_COLORS[d.type] || "#484f58")
       .attr("stroke", (d) => LANG_COLORS[d.language] || "var(--bg)")
       .attr("stroke-width", (d) => d.language ? 2.5 : 1.5);
 
     enter
       .append("text")
-      .text((d) => d.name)
-      .attr("x", (d) => (TYPE_RADIUS[d.type] || 6) + 4)
       .attr("y", 4)
-      .attr("font-size", "10px")
+      .attr("font-size", (d) => `${d.degreeTier === "high" ? 12 : 10}px`)
       .attr("fill", "var(--fg2)")
       .attr("font-family", "var(--sans)");
 
-    enter
+    const mergedNodes = enter.merge(nodeSel);
+
+    mergedNodes
+      .select("circle")
+      .attr("r", (d) => getNodeRadius(d));
+
+    mergedNodes
+      .select("text")
+      .text((d) => d.name)
+      .attr("x", (d) => getNodeRadius(d) + 4)
+      .attr("display", showLabels ? null : "none")
+      .attr("font-size", (d) => `${d.degreeTier === "high" ? 12 : 10}px`);
+
+    mergedNodes
       .on("mouseover", (event, d) => showTooltip(event, d))
       .on("mouseout", () => hideTooltip())
       .on("click", (event, d) => selectNode(d));
@@ -166,6 +214,7 @@
     if (simulation) {
       simulation.nodes(nodes);
       simulation.force("link").links(links);
+      simulation.force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 6));
       simulation.alpha(0.3).restart();
     }
   }
@@ -357,6 +406,8 @@
           description: e.description || "",
           parent_id: e.parent_id || null,
           language: e.language || "",
+          degree: 0,
+          degreeTier: "base",
         };
         nodes.push(node);
         entityMap[e.entity_id] = node;
@@ -447,9 +498,22 @@
     }
   }
 
+  function syncLabelToggle() {
+    if (!labelToggle) return;
+    labelToggle.checked = showLabels;
+  }
+
   function updateStats(summary) {
     const s = summary || { entities: nodes.length, edges: links.length };
     statsLabel.textContent = `${s.entities || nodes.length} entities, ${s.edges || links.length} edges`;
+  }
+
+  if (labelToggle) {
+    syncLabelToggle();
+    labelToggle.addEventListener("change", () => {
+      showLabels = labelToggle.checked;
+      renderGraph();
+    });
   }
 
   // -- Chat -------------------------------------------------------------
@@ -498,6 +562,8 @@
   });
 
   function pollChatTurn(turnId) {
+    let delay = 200;
+    const maxDelay = 3000;
     const poll = () => {
       fetch(`/api/chat/turn/${turnId}`)
         .then((r) => r.json())
@@ -506,7 +572,8 @@
             removeThinking();
             appendChatMsg("assistant", data.answer || "No answer");
           } else {
-            setTimeout(poll, 1500);
+            delay = Math.min(delay * 1.5, maxDelay);
+            setTimeout(poll, delay);
           }
         })
         .catch(() => {

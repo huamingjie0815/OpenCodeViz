@@ -51,8 +51,18 @@ class ProjectQAAgent:
     def ask(self, question: str, session_id: str = "project-default") -> dict:
         context = self._build_context(question, session_id)
 
-        if create_deep_agent is not None and self._has_api_key():
-            return self._ask_via_agent(question, context)
+        if self._has_api_key():
+            # Fast path: single LLM call with pre-built context — covers most questions in ~3-5s
+            try:
+                return self._ask_simple(question, context)
+            except Exception:
+                pass
+            # Slow path: multi-step agent with tools — only if fast path failed
+            if create_deep_agent is not None:
+                try:
+                    return self._ask_via_agent(question, context)
+                except Exception:
+                    pass
 
         return self._fallback_answer(question, context)
 
@@ -103,6 +113,41 @@ class ProjectQAAgent:
 
         return "\n".join(parts)
 
+    def _ask_simple(self, question: str, context: str) -> dict:
+        """Single-shot LLM call with pre-built context. Fast (~3-5s), covers most questions."""
+        from langchain.chat_models import init_chat_model
+
+        provider = runtime_value("CODEVIZ_PROVIDER", self.config.get("provider", "openai"))
+        model = runtime_value("CODEVIZ_MODEL", self.config.get("model", ""))
+        api_key = runtime_api_key(self.config)
+        base_url = runtime_value("CODEVIZ_BASE_URL", self.config.get("baseUrl", ""))
+
+        if not model:
+            model = {
+                "openai": "gpt-4o-mini",
+                "anthropic": "claude-sonnet-4-20250514",
+                "google_genai": "gemini-2.0-flash",
+            }.get(provider, "gpt-4o-mini")
+
+        env_map = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "google_genai": "GOOGLE_API_KEY",
+        }
+        env_var = env_map.get(provider)
+        if api_key and env_var and not os.environ.get(env_var):
+            os.environ[env_var] = api_key
+
+        kwargs: dict = {"model_provider": provider}
+        if base_url:
+            kwargs["base_url"] = base_url
+        llm = init_chat_model(model, **kwargs)
+
+        prompt = f"{QA_SYSTEM_PROMPT}\n\n{context}\n\nUser question: {question}"
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"answer": str(answer), "citations": [], "model": model, "provider": provider}
+
     def _ask_via_agent(self, question: str, context: str) -> dict:
         from langchain.chat_models import init_chat_model
 
@@ -146,7 +191,7 @@ class ProjectQAAgent:
         )
         result = agent.invoke(
             {"messages": [{"role": "user", "content": prompt}]},
-            config={"recursion_limit": 25},
+            config={"recursion_limit": 100},
         )
 
         answer = ""
