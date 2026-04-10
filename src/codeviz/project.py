@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -227,6 +228,8 @@ class CodeVizProject:
         }
         save_chat_turn(self.status, turn)
 
+        _QA_TIMEOUT = 90  # seconds
+
         def worker():
             try:
                 freshness = self._freshness()
@@ -235,7 +238,15 @@ class CodeVizProject:
                         analyze_project(self.root, self.status, self.config)
 
                 agent = ProjectQAAgent(self.root, self.status, self.config)
-                result = agent.ask(question, session_id=session_id)
+                with ThreadPoolExecutor(max_workers=1) as _pool:
+                    _future = _pool.submit(agent.ask, question, session_id)
+                    try:
+                        result = _future.result(timeout=_QA_TIMEOUT)
+                    except FuturesTimeoutError:
+                        result = {
+                            "answer": f"Request timed out after {_QA_TIMEOUT} seconds. Try asking a more specific question.",
+                            "citations": [],
+                        }
                 turn["answer"] = result.get("answer", "")
                 turn["citations"] = result.get("citations", [])
                 turn["status"] = "completed"

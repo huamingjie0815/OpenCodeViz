@@ -146,7 +146,7 @@ class ProjectQAAgent:
         )
         result = agent.invoke(
             {"messages": [{"role": "user", "content": prompt}]},
-            config={"recursion_limit": 100},
+            config={"recursion_limit": 25},
         )
 
         answer = ""
