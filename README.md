@@ -1,6 +1,6 @@
 # OpenCodeViz
 
-Local-first code graph analysis and project Q&A for real repositories.
+AI-powered local code graph visualization and codebase Q&A for real repositories.
 
 `codeviz-ai` is the npm package name used for publishing.
 `codeviz` remains the CLI command.

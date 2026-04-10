@@ -1,15 +1,3 @@
-[mcp_servers.graphiti_docs]
-url = "https://gitmcp.io/getzep/graphiti"
-
-[mcp_servers.graphiti_docs.tools.fetch_graphiti_documentation]
-approval_mode = "approve"
-
-[mcp_servers.graphiti_docs.tools.search_graphiti_documentation]
-approval_mode = "approve"
-
-[mcp_servers.graphiti_docs.tools.search_graphiti_code]
-approval_mode = "approve"
-
 [mcp_servers.deepagents_docs]
 url = "https://gitmcp.io/langchain-ai/deepagents"
 

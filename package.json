@@ -1,7 +1,7 @@
 {
   "name": "codeviz-ai",
   "version": "0.1.0",
-  "description": "Local-first code graph and project Q&A CLI",
+  "description": "AI-powered local code graph visualization and codebase Q&A CLI",
   "license": "MIT",
   "type": "module",
   "bin": {
