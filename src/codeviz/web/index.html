@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeViz</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        :root {
+            --bg: #0d1117;
+            --bg2: #161b22;
+            --bg3: #21262d;
+            --fg: #c9d1d9;
+            --fg2: #8b949e;
+            --fg3: #484f58;
+            --accent: #58a6ff;
+            --accent2: #388bfd;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --purple: #bc8cff;
+            --orange: #f0883e;
+            --border: #30363d;
+            --shadow: 0 2px 8px rgba(0, 0, 0, .4);
+            --mono: "JetBrains Mono", "Fira Code", "SF Mono", "Menlo", monospace;
+            --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            --radius: 6px;
+        }
+
+        html,
+        body {
+            height: 100%;
+            font-family: var(--sans);
+            background: var(--bg);
+            color: var(--fg)
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none
+        }
+
+        /* layout */
+        #app {
+            display: grid;
+            grid-template-rows: 48px 1fr;
+            grid-template-columns: 1fr 340px;
+            height: 100vh;
+            overflow: hidden
+        }
+
+        header {
+            grid-column: 1/3;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 16px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border)
+        }
+
+        header h1 {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: .5px
+        }
+
+        header .badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--bg3);
+            color: var(--fg2)
+        }
+
+        header .badge.analyzing {
+            background: var(--yellow);
+            color: #000
+        }
+
+        header .badge.fresh {
+            background: var(--green);
+            color: #000
+        }
+
+        header .badge.stale {
+            background: var(--orange);
+            color: #000
+        }
+
+        #graph-area {
+            position: relative;
+            overflow: hidden;
+            background: var(--bg)
+        }
+
+        #graph-area svg {
+            width: 100%;
+            height: 100%
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            display: flex;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(22, 27, 34, .9);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            font-size: 11px
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%
+        }
+
+        /* sidebar */
+        #sidebar {
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid var(--border);
+            background: var(--bg2);
+            overflow: hidden
+        }
+
+        .sidebar-section {
+            padding: 12px;
+            border-bottom: 1px solid var(--border)
+        }
+
+        .sidebar-section h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--fg2);
+            margin-bottom: 8px;
+            letter-spacing: .5px
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 6px 10px;
+            background: var(--bg3);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 13px;
+            outline: none
+        }
+
+        #search-input:focus {
+            border-color: var(--accent)
+        }
+
+        #search-results {
+            max-height: 200px;
+            overflow-y: auto
+        }
+
+        .search-item {
+            padding: 4px 0;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px
+        }
+
+        .search-item:hover {
+            color: var(--accent)
+        }
+
+        .type-badge {
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-weight: 600;
+            text-transform: uppercase
+        }
+
+        .type-badge.class {
+            background: var(--accent);
+            color: #000
+        }
+
+        .type-badge.function {
+            background: var(--green);
+            color: #000
+        }
+
+        .type-badge.method {
+            background: var(--purple);
+            color: #000
+        }
+
+        .type-badge.interface {
+            background: var(--yellow);
+            color: #000
+        }
+
+        .type-badge.variable {
+            background: var(--fg3);
+            color: var(--fg)
+        }
+
+        .type-badge.module {
+            background: var(--orange);
+            color: #000
+        }
+
+        /* detail panel */
+        #detail-panel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            font-size: 13px;
+            line-height: 1.6
+        }
+
+        #detail-panel .file-path {
+            color: var(--fg2);
+            font-size: 11px;
+            font-family: var(--mono)
+        }
+
+        #detail-panel .desc {
+            margin-top: 6px;
+            color: var(--fg)
+        }
+
+        #detail-panel .neighbors {
+            margin-top: 10px
+        }
+
+        #detail-panel .neighbor-item {
+            font-size: 12px;
+            padding: 2px 0;
+            cursor: pointer;
+            color: var(--accent)
+        }
+
+        /* chat */
+        #chat-toggle {
+            position: fixed;
+            bottom: 16px;
+            right: 356px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow);
+            z-index: 10;
+            transition: bottom .25s ease
+        }
+
+        #chat-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 340px;
+            height: 0;
+            background: var(--bg2);
+            border-top: 1px solid var(--border);
+            transition: height .25s ease;
+            overflow: hidden;
+            z-index: 9;
+            display: flex;
+            flex-direction: column
+        }
+
+        #chat-panel.open {
+            height: 320px
+        }
+
+        #chat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            font-weight: 600
+        }
+
+        #chat-header button {
+            background: none;
+            border: none;
+            color: var(--fg2);
+            cursor: pointer;
+            font-size: 16px
+        }
+
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+            font-size: 13px;
+            line-height: 1.6
+        }
+
+        .chat-msg {
+            margin-bottom: 10px;
+            max-width: 85%
+        }
+
+        .chat-msg.user {
+            margin-left: auto;
+            text-align: right
+        }
+
+        .chat-msg .bubble {
+            display: inline-block;
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            white-space: pre-wrap;
+            word-break: break-word
+        }
+
+        .chat-msg.user .bubble {
+            background: var(--accent2);
+            color: #fff
+        }
+
+        .chat-msg.assistant .bubble {
+            background: var(--bg3);
+            color: var(--fg)
+        }
+
+        .chat-msg.thinking .bubble {
+            background: var(--bg3);
+            color: var(--fg2);
+            font-style: italic;
+            display: flex;
+            align-items: center;
+            gap: 6px
+        }
+
+        @keyframes thinking-blink {
+
+            0%,
+            80%,
+            100% {
+                opacity: .25
+            }
+
+            40% {
+                opacity: 1
+            }
+        }
+
+        .thinking-dots span {
+            animation: thinking-blink 1.4s infinite;
+            display: inline-block;
+            font-style: normal
+        }
+
+        .thinking-dots span:nth-child(2) {
+            animation-delay: .2s
+        }
+
+        .thinking-dots span:nth-child(3) {
+            animation-delay: .4s
+        }
+
+        .thinking-timer {
+            font-size: 11px;
+            opacity: .6
+        }
+
+        .chat-msg.assistant .bubble {
+            text-align: left
+        }
+
+        .chat-msg.assistant .bubble p {
+            margin: 0 0 8px
+        }
+
+        .chat-msg.assistant .bubble p:last-child {
+            margin: 0
+        }
+
+        .chat-msg.assistant .bubble code {
+            font-family: 'SFMono-Regular', Consolas, monospace;
+            background: var(--bg);
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 12px
+        }
+
+        .chat-msg.assistant .bubble pre {
+            background: var(--bg);
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            overflow-x: auto;
+            margin: 6px 0
+        }
+
+        .chat-msg.assistant .bubble pre code {
+            background: none;
+            padding: 0;
+            font-size: 12px
+        }
+
+        .chat-msg.assistant .bubble ul,
+        .chat-msg.assistant .bubble ol {
+            margin: 4px 0 8px;
+            padding-left: 20px
+        }
+
+        .chat-msg.assistant .bubble h1,
+        .chat-msg.assistant .bubble h2,
+        .chat-msg.assistant .bubble h3 {
+            margin: 8px 0 4px;
+            font-size: 13px;
+            font-weight: 700
+        }
+
+        .chat-msg.assistant .bubble a {
+            color: var(--accent)
+        }
+
+        .chat-msg.assistant .bubble blockquote {
+            border-left: 3px solid var(--accent);
+            margin: 4px 0;
+            padding-left: 10px;
+            color: var(--fg2)
+        }
+
+        #chat-form {
+            display: flex;
+            padding: 8px;
+            border-top: 1px solid var(--border);
+            gap: 6px
+        }
+
+        #chat-input {
+            flex: 1;
+            padding: 8px 10px;
+            background: var(--bg3);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 13px;
+            outline: none
+        }
+
+        #chat-input:focus {
+            border-color: var(--accent)
+        }
+
+        #chat-form button[type=submit] {
+            padding: 6px 16px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 600
+        }
+
+        /* events log */
+        #events-bar {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            font-size: 11px;
+            color: var(--fg2);
+            z-index: 5
+        }
+
+        #events-bar .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--fg3)
+        }
+
+        #events-bar .status-dot.active {
+            background: var(--green);
+            animation: pulse 1.5s infinite
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .4
+            }
+        }
+
+        /* tooltip */
+        .tooltip {
+            position: absolute;
+            pointer-events: none;
+            padding: 8px 12px;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 12px;
+            max-width: 300px;
+            box-shadow: var(--shadow);
+            z-index: 20;
+            white-space: pre-wrap
+        }
+
+        /* scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--fg3);
+            border-radius: 3px
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <header>
+            <h1>CodeViz</h1>
+            <span id="status-badge" class="badge">loading</span>
+            <span id="stats-label" style="font-size:12px;color:var(--fg2)"></span>
+            <div style="flex:1"></div>
+            <div id="events-bar">
+                <span class="status-dot" id="stream-dot"></span>
+                <span id="stream-label">connecting...</span>
+            </div>
+        </header>
+
+        <div id="graph-area">
+            <svg id="graph-svg"></svg>
+            <div id="legend">
+                <div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>class</div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>function</div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--purple)"></span>method</div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span>interface
+                </div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>module</div>
+            </div>
+            <div class="tooltip" id="tooltip" style="display:none"></div>
+        </div>
+
+        <div id="sidebar">
+            <div class="sidebar-section">
+                <h3>Search</h3>
+                <input id="search-input" type="text" placeholder="Search entities...">
+                <div id="search-results"></div>
+            </div>
+            <div id="detail-panel" class="sidebar-section" style="border-bottom:none">
+                <p style="color:var(--fg2);font-size:12px">Click a node to see details</p>
+            </div>
+        </div>
+    </div>
+
+    <button id="chat-toggle" title="Chat">💬</button>
+    <div id="chat-panel">
+        <div id="chat-header">
+            <span>Project Q&A</span>
+            <button id="chat-close">&times;</button>
+        </div>
+        <div id="chat-messages"></div>
+        <form id="chat-form">
+            <input id="chat-input" type="text" placeholder="Ask about this codebase..." autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script src="vendor/d3.min.js"></script>
+    <script src="vendor/marked.min.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

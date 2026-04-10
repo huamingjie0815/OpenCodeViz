@@ -1,0 +1,40 @@
+Metadata-Version: 2.4
+Name: codeviz
+Version: 0.1.0
+Summary: Local-first code graph and project Q&A tool
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic<3,>=2.11
+Requires-Dist: langchain<1,>=0.3
+Requires-Dist: langchain-core<1,>=0.3
+Requires-Dist: langchain-openai<1,>=0.3
+Requires-Dist: langchain-anthropic<1,>=0.3
+Requires-Dist: langchain-google-genai<3,>=2
+Provides-Extra: runtime
+Requires-Dist: deepagents>=0.0.0; extra == "runtime"
+
+# CodeViz
+
+Local-first code graph and project Q&A tool.
+
+## npm CLI
+
+```bash
+npm install -g codeviz
+codeviz setup
+```
+
+Non-interactive setup:
+
+```bash
+codeviz setup --yes --provider openai --api-key sk-... --default-port 39127
+```
+
+After setup, no extra `export` is required if you saved the key in setup:
+
+```bash
+codeviz analyze <project>
+codeviz open <project>
+codeviz ask <project> "How is login implemented?"
+codeviz compare <project> "login" --from-version v1 --to-version HEAD
+```

@@ -1,0 +1,9 @@
+pydantic<3,>=2.11
+langchain<1,>=0.3
+langchain-core<1,>=0.3
+langchain-openai<1,>=0.3
+langchain-anthropic<1,>=0.3
+langchain-google-genai<3,>=2
+
+[runtime]
+deepagents>=0.0.0

@@ -1,0 +1,13 @@
+.codex/
+.git/
+.omx/
+.pytest_cache/
+.venv/
+fixtures/
+tests/
+node_modules/
+src/codeviz/__pycache__/
+src/codeviz.egg-info/
+**/__pycache__/
+*.pyc
+*.pyo
