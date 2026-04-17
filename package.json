@@ -3,6 +3,10 @@
   "version": "0.1.2",
   "description": "AI-powered local code graph visualization and codebase Q&A CLI",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huamingjie0815/OpenCodeViz.git"
+  },
   "type": "module",
   "bin": {
     "codeviz": "./bin/codeviz.js"
