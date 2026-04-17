@@ -108,6 +108,12 @@
   const searchInput = document.getElementById("search-input");
   const searchResults = document.getElementById("search-results");
   const detailPanel = document.getElementById("detail-panel");
+  detailPanel.addEventListener("click", (e) => {
+    const item = e.target.closest(".neighbor-item");
+    if (!item) return;
+    const n = entityMap[item.dataset.id];
+    if (n) selectNode(n);
+  });
   const labelToggle = document.getElementById("label-toggle");
   const legend = document.getElementById("legend");
   const chatForm = document.getElementById("chat-form");
@@ -967,13 +973,6 @@
       html.push("</div>");
     }
     detailPanel.innerHTML = html.join("");
-    detailPanel.querySelectorAll(".neighbor-item").forEach((el) => {
-      el.addEventListener("click", () => {
-        const id = el.dataset.id;
-        const n = entityMap[id];
-        if (n) selectNode(n);
-      });
-    });
   }
 
   function renderDetailMessage(message) {
@@ -1625,7 +1624,15 @@
       }, 1000);
     } else if (role === "assistant") {
       if (typeof marked !== "undefined") {
-        bubble.innerHTML = marked.parse(text);
+        const raw = marked.parse(text);
+        const doc = new DOMParser().parseFromString(raw, "text/html");
+        doc.querySelectorAll("script").forEach((el) => el.remove());
+        doc.querySelectorAll("*").forEach((el) => {
+          [...el.attributes].forEach((attr) => {
+            if (attr.name.startsWith("on")) el.removeAttribute(attr.name);
+          });
+        });
+        bubble.innerHTML = doc.body.innerHTML;
       } else {
         bubble.textContent = text;
       }

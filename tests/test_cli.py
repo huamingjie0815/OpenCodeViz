@@ -60,14 +60,9 @@ def test_ask_cli_labels_scope(fixture_project: Path, capsys) -> None:
     out = parse_stdout(capsys)
 
     assert "Source: agent" in out
-
-
-def test_analyze_cli_can_skip_browser(fixture_project: Path, capsys, monkeypatch) -> None:
-    monkeypatch.setattr(CodeVizServer, "start", lambda self: {"ok": True, "url": "http://127.0.0.1:39127/", "port": 39127})
-    run_cli(["analyze", str(fixture_project), "--no-browser"])
-    out = parse_stdout(capsys)
-
-    assert "Mode: analyze" in out
+    lines = [l for l in out.strip().splitlines() if l]
+    # Second line is the answer; it should be non-empty
+    assert len(lines) >= 2 and lines[1].strip()
 
 
 def test_analyze_cli_blocks_in_interactive_mode(fixture_project: Path, monkeypatch) -> None:

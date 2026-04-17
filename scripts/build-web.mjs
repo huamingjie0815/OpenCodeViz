@@ -10,15 +10,15 @@ const builtVendorDest = resolve("dist/web/vendor");
 
 mkdirSync(dest, { recursive: true });
 cpSync(src, dest, { recursive: true });
-if (existsSync(vendorSrc)) {
+if (existsSync(vendorSrc) || existsSync(markedSrc)) {
   mkdirSync(vendorDest, { recursive: true });
   mkdirSync(builtVendorDest, { recursive: true });
+}
+if (existsSync(vendorSrc)) {
   cpSync(vendorSrc, resolve(vendorDest, "d3.min.js"));
   cpSync(vendorSrc, resolve(builtVendorDest, "d3.min.js"));
 }
 if (existsSync(markedSrc)) {
-  mkdirSync(vendorDest, { recursive: true });
-  mkdirSync(builtVendorDest, { recursive: true });
   cpSync(markedSrc, resolve(vendorDest, "marked.min.js"));
   cpSync(markedSrc, resolve(builtVendorDest, "marked.min.js"));
 }

@@ -145,7 +145,7 @@ def _resolve_import_url(
     else:
         stem = Path(last_segment).stem
     # Skip bare package names: no "/" in url and no "." in stem  -> stdlib/npm package
-    if "/" not in url and "." not in stem and "." not in url:
+    if "/" not in url and "." not in stem:
         return None
     if not stem:
         return None

@@ -303,6 +303,8 @@ def search_entities(status: ProjectStatus, query: str, limit: int = 20) -> list[
             d["_score"] = score
             results.append(d)
     results.sort(key=lambda x: x["_score"], reverse=True)
+    for r in results:
+        r.pop("_score", None)
     return results[:limit]
 
 
@@ -319,6 +321,8 @@ def search_documents_by_query(status: ProjectStatus, query: str, limit: int = 10
             d["_score"] = score
             results.append(d)
     results.sort(key=lambda x: x["_score"], reverse=True)
+    for r in results:
+        r.pop("_score", None)
     return results[:limit]
 
 

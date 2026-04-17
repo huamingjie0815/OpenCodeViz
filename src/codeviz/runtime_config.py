@@ -9,7 +9,7 @@ def load_runtime_config(project_root: Path | None = None) -> dict:
     paths: list[Path] = []
     explicit = os.environ.get("CODEVIZ_CONFIG_PATH")
     if explicit:
-      paths.append(Path(explicit))
+        paths.append(Path(explicit))
     if project_root is not None:
         paths.append(project_root / ".codeviz" / "config.json")
 
