@@ -109,6 +109,96 @@
             height: 100%
         }
 
+        .view-tabs {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 6
+        }
+
+        .view-tab {
+            border: 1px solid var(--border);
+            background: rgba(22, 27, 34, .92);
+            color: var(--fg2);
+            border-radius: var(--radius);
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer
+        }
+
+        .view-tab:hover {
+            color: var(--fg)
+        }
+
+        .view-tab.active {
+            color: var(--fg);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(88, 166, 255, .18) inset
+        }
+
+        .graph-action {
+            position: absolute;
+            top: 56px;
+            left: 12px;
+            z-index: 6;
+            border: 1px solid var(--border);
+            background: rgba(22, 27, 34, .92);
+            color: var(--fg);
+            border-radius: var(--radius);
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer
+        }
+
+        .graph-action:hover {
+            border-color: var(--accent)
+        }
+
+        .flow-controls {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 6;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: rgba(22, 27, 34, .92)
+        }
+
+        .flow-controls input {
+            width: 320px;
+            padding: 6px 10px;
+            background: var(--bg3);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 12px;
+            outline: none
+        }
+
+        .flow-controls input:focus {
+            border-color: var(--accent)
+        }
+
+        .flow-controls button {
+            padding: 6px 12px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600
+        }
+
+        .flow-controls[hidden] {
+            display: none
+        }
+
         #legend {
             position: absolute;
             bottom: 12px;
@@ -132,6 +222,58 @@
             width: 10px;
             height: 10px;
             border-radius: 50%
+        }
+
+        .arch-layer-label {
+            font-size: 11px;
+            fill: var(--fg2);
+            text-transform: uppercase;
+            letter-spacing: 1.2px
+        }
+
+        .arch-lane rect {
+            fill: rgba(22, 27, 34, .55);
+            stroke: rgba(48, 54, 61, .9);
+            stroke-width: 1;
+            rx: 16
+        }
+
+        .arch-edge {
+            fill: none;
+            stroke-opacity: .52;
+            stroke-linecap: round
+        }
+
+        .arch-node rect {
+            fill: rgba(33, 38, 45, .96);
+            stroke: var(--border);
+            stroke-width: 1.2;
+            rx: 10
+        }
+
+        .arch-node.active rect,
+        .arch-node:hover rect {
+            stroke: var(--accent);
+            box-shadow: 0 0 0 1px rgba(88, 166, 255, .18) inset
+        }
+
+        .arch-node-title {
+            fill: var(--fg);
+            font-size: 13px;
+            font-weight: 600
+        }
+
+        .arch-node-meta {
+            fill: var(--fg2);
+            font-size: 11px
+        }
+
+        .arch-edge.strong {
+            stroke-opacity: .92
+        }
+
+        .arch-edge.medium {
+            stroke-opacity: .72
         }
 
         /* sidebars */
@@ -795,6 +937,16 @@
         <div id="left-resizer" class="sidebar-resizer" aria-hidden="true"></div>
 
         <div id="graph-area">
+            <div id="view-tabs" class="view-tabs">
+                <button class="view-tab active" data-view="code" type="button">Code Graph</button>
+                <button class="view-tab" data-view="architecture" type="button">Architecture</button>
+                <button class="view-tab" data-view="flow" type="button">Flow</button>
+            </div>
+            <button id="architecture-back-button" class="graph-action" type="button" hidden>Back</button>
+            <div id="flow-controls" class="flow-controls" hidden>
+                <input id="flow-entry-input" type="text" placeholder="Enter file path or entity id">
+                <button id="flow-run-button" type="button">Generate</button>
+            </div>
             <svg id="graph-svg"></svg>
             <div id="legend">
                 <label class="legend-item" style="cursor:pointer;gap:6px;align-items:center;display:flex;">
@@ -835,6 +987,8 @@
 
     <script src="vendor/d3.min.js"></script>
     <script src="vendor/marked.min.js"></script>
+    <script src="architecture-layout.js"></script>
+    <script src="architecture-interactions.js"></script>
     <script src="app.js"></script>
 </body>
 
