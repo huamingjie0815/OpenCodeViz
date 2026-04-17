@@ -10,6 +10,9 @@ from typing import Any
 
 from codeviz.models import (
     AnalysisMeta,
+    ArchitectureDependency,
+    ArchitectureFlow,
+    ArchitectureModule,
     DocumentRecord,
     EdgeRecord,
     EntityRecord,
@@ -203,6 +206,42 @@ def save_documents(status: ProjectStatus, docs: list[DocumentRecord]) -> None:
 def load_documents(status: ProjectStatus) -> list[DocumentRecord]:
     data = _read_json(status.current_dir / "documents.json", [])
     return [DocumentRecord.from_dict(d) for d in data]
+
+
+# -- Architecture -----------------------------------------------------------
+
+def save_architecture(
+    status: ProjectStatus,
+    modules: list[ArchitectureModule],
+    dependencies: list[ArchitectureDependency],
+    meta: dict[str, Any],
+) -> None:
+    _atomic_write(
+        status.current_dir / "architecture.json",
+        {
+            "modules": [module.to_dict() for module in modules],
+            "dependencies": [dependency.to_dict() for dependency in dependencies],
+            "meta": meta,
+        },
+    )
+
+
+def load_architecture(status: ProjectStatus) -> dict[str, Any]:
+    return _read_json(status.current_dir / "architecture.json", {"modules": [], "dependencies": [], "meta": {}})
+
+
+def save_flow_index(status: ProjectStatus, entries: dict[str, Any], flows: list[ArchitectureFlow]) -> None:
+    _atomic_write(
+        status.current_dir / "flow_index.json",
+        {
+            "entries": entries,
+            "flows": [flow.to_dict() for flow in flows],
+        },
+    )
+
+
+def load_flow_index(status: ProjectStatus) -> dict[str, Any]:
+    return _read_json(status.current_dir / "flow_index.json", {"entries": {}, "flows": []})
 
 
 # -- Events ------------------------------------------------------------------

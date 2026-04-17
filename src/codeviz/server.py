@@ -36,6 +36,17 @@ class CodeVizRequestHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/graph":
             return self._send_json(self.project.graph_api_payload())
 
+        if parsed.path == "/api/architecture":
+            return self._send_json(self.project.architecture_payload())
+
+        if parsed.path == "/api/flow/index":
+            return self._send_json(self.project.flow_index_payload())
+
+        if parsed.path == "/api/flow":
+            params = parse_qs(parsed.query)
+            entry = params.get("entry", [""])[0]
+            return self._send_json(self.project.flow_payload(entry))
+
         if parsed.path == "/api/project-info":
             return self._send_json(self.project.status_payload())
 

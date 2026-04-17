@@ -161,12 +161,17 @@
             top: 12px;
             right: 12px;
             display: flex;
+            align-items: flex-start;
             gap: 8px;
             z-index: 6;
             padding: 8px;
             border: 1px solid var(--border);
             border-radius: var(--radius);
             background: rgba(22, 27, 34, .92)
+        }
+
+        .flow-entry-picker {
+            position: relative;
         }
 
         .flow-controls input {
@@ -193,6 +198,28 @@
             font-size: 12px;
             cursor: pointer;
             font-weight: 600
+        }
+
+        .flow-entry-results {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            max-height: 240px;
+            overflow-y: auto;
+            padding: 6px 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: rgba(22, 27, 34, .98);
+            box-shadow: var(--shadow)
+        }
+
+        .flow-entry-results[hidden] {
+            display: none
+        }
+
+        .flow-entry-results .search-item {
+            padding: 6px 0
         }
 
         .flow-controls[hidden] {
@@ -274,6 +301,43 @@
 
         .arch-edge.medium {
             stroke-opacity: .72
+        }
+
+        .flow-edge {
+            fill: none;
+            stroke-linecap: round
+        }
+
+        .flow-node rect {
+            fill: rgba(33, 38, 45, .98);
+            stroke: var(--border);
+            stroke-width: 1.2
+        }
+
+        .flow-node {
+            cursor: grab
+        }
+
+        .flow-node.active rect,
+        .flow-node:hover rect {
+            stroke: var(--accent)
+        }
+
+        .flow-node-title {
+            fill: var(--fg);
+            font-size: 13px;
+            font-weight: 600
+        }
+
+        .flow-node-meta {
+            fill: var(--fg2);
+            font-size: 11px
+        }
+
+        .flow-node-badge {
+            fill: var(--yellow);
+            font-size: 11px;
+            font-weight: 600
         }
 
         /* sidebars */
@@ -491,6 +555,16 @@
 
         .type-badge.module {
             background: var(--orange);
+            color: #000
+        }
+
+        .type-badge.file {
+            background: var(--orange);
+            color: #000
+        }
+
+        .type-badge.entity {
+            background: var(--green);
             color: #000
         }
 
@@ -944,7 +1018,10 @@
             </div>
             <button id="architecture-back-button" class="graph-action" type="button" hidden>Back</button>
             <div id="flow-controls" class="flow-controls" hidden>
-                <input id="flow-entry-input" type="text" placeholder="Enter file path or entity id">
+                <div class="flow-entry-picker">
+                    <input id="flow-entry-input" type="text" placeholder="Search file path or entity id" autocomplete="off">
+                    <div id="flow-entry-results" class="flow-entry-results" hidden></div>
+                </div>
                 <button id="flow-run-button" type="button">Generate</button>
             </div>
             <svg id="graph-svg"></svg>
@@ -989,6 +1066,10 @@
     <script src="vendor/marked.min.js"></script>
     <script src="architecture-layout.js"></script>
     <script src="architecture-interactions.js"></script>
+    <script src="flow-layout.js"></script>
+    <script src="flow-interactions.js"></script>
+    <script src="flow-search.js"></script>
+    <script src="view-search.js"></script>
     <script src="app.js"></script>
 </body>
 

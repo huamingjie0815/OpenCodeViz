@@ -5,6 +5,10 @@ from pathlib import Path
 
 from codeviz.models import (
     AnalysisMeta,
+    ArchitectureDependency,
+    ArchitectureFlow,
+    ArchitectureFlowStep,
+    ArchitectureModule,
     EntityRecord,
     EdgeRecord,
     FileRecord,
@@ -19,13 +23,17 @@ from codeviz.storage import (
     ensure_layout,
     graph_payload,
     graph_summary,
+    load_architecture,
     load_entities,
     load_edges,
     load_events,
+    load_flow_index,
     load_meta,
     save_chat_turn,
     load_chat_turn,
     load_chat_session,
+    save_architecture,
+    save_flow_index,
     save_meta,
     save_project_info,
     load_project_info,
@@ -177,3 +185,70 @@ def test_chat_turn_lifecycle(tmp_path: Path) -> None:
     session = load_chat_session(status, "default")
     assert len(session) == 1
     assert session[0]["turn_id"] == "t1"
+
+
+def test_save_and_load_architecture_assets(tmp_path: Path) -> None:
+    status = _make_status(tmp_path)
+    ensure_layout(status)
+
+    module = ArchitectureModule(
+        module_id="src/codeviz",
+        display_name="codeviz core",
+        source_dirs=["src/codeviz"],
+        file_paths=["src/codeviz/project.py"],
+        entity_ids=["function:src/codeviz/project.py:analyze:1"],
+        merge_reason="directory",
+        confidence="high",
+    )
+    dependency = ArchitectureDependency(
+        source_module_id="src/codeviz",
+        target_module_id="src/codeviz/web",
+        dominant_edge_type="imports",
+        imports_count=1,
+        calls_count=0,
+        uses_count=0,
+        strength=1,
+        evidence=[{"source_file": "src/codeviz/project.py", "target_file": "src/codeviz/web/app.js"}],
+    )
+
+    save_architecture(status, [module], [dependency], {"root_modules": 1})
+
+    payload = load_architecture(status)
+    assert payload["modules"][0]["display_name"] == "codeviz core"
+    assert payload["dependencies"][0]["dominant_edge_type"] == "imports"
+    assert payload["meta"]["root_modules"] == 1
+
+
+def test_save_and_load_flow_index(tmp_path: Path) -> None:
+    status = _make_status(tmp_path)
+    ensure_layout(status)
+
+    flow = ArchitectureFlow(
+        flow_id="flow:analyze",
+        entry={"kind": "entity", "value": "function:src/codeviz/project.py:analyze:1"},
+        scope="entity",
+        steps=[
+            ArchitectureFlowStep(
+                step_id="step-1",
+                label="Analyze project",
+                node_kind="entity",
+                ref="function:src/codeviz/project.py:analyze:1",
+                file_path="src/codeviz/project.py",
+                evidence=[{"entity_id": "function:src/codeviz/project.py:analyze:1"}],
+            )
+        ],
+        transitions=[],
+        collapsed_subflows=[],
+        evidence=[],
+        warnings=[],
+    )
+
+    save_flow_index(
+        status,
+        {"entity": [{"label": "Analyze project", "value": "function:src/codeviz/project.py:analyze:1"}]},
+        [flow],
+    )
+
+    payload = load_flow_index(status)
+    assert payload["entries"]["entity"][0]["label"] == "Analyze project"
+    assert payload["flows"][0]["flow_id"] == "flow:analyze"

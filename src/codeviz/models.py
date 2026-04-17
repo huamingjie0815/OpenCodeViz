@@ -168,6 +168,157 @@ class ProjectInfo:
 
 
 @dataclass(slots=True)
+class ArchitectureModule:
+    module_id: str
+    display_name: str
+    source_dirs: list[str] = field(default_factory=list)
+    file_paths: list[str] = field(default_factory=list)
+    entity_ids: list[str] = field(default_factory=list)
+    merge_reason: str = ""
+    confidence: str = "high"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "module_id": self.module_id,
+            "display_name": self.display_name,
+            "source_dirs": self.source_dirs,
+            "file_paths": self.file_paths,
+            "entity_ids": self.entity_ids,
+            "merge_reason": self.merge_reason,
+            "confidence": self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ArchitectureModule":
+        return cls(
+            module_id=data["module_id"],
+            display_name=data.get("display_name", ""),
+            source_dirs=data.get("source_dirs", []),
+            file_paths=data.get("file_paths", []),
+            entity_ids=data.get("entity_ids", []),
+            merge_reason=data.get("merge_reason", ""),
+            confidence=data.get("confidence", "high"),
+        )
+
+
+@dataclass(slots=True)
+class ArchitectureDependency:
+    source_module_id: str
+    target_module_id: str
+    dominant_edge_type: str
+    imports_count: int = 0
+    calls_count: int = 0
+    uses_count: int = 0
+    strength: int = 0
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source_module_id": self.source_module_id,
+            "target_module_id": self.target_module_id,
+            "dominant_edge_type": self.dominant_edge_type,
+            "imports_count": self.imports_count,
+            "calls_count": self.calls_count,
+            "uses_count": self.uses_count,
+            "strength": self.strength,
+            "evidence": self.evidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ArchitectureDependency":
+        return cls(
+            source_module_id=data["source_module_id"],
+            target_module_id=data["target_module_id"],
+            dominant_edge_type=data.get("dominant_edge_type", ""),
+            imports_count=data.get("imports_count", 0),
+            calls_count=data.get("calls_count", 0),
+            uses_count=data.get("uses_count", 0),
+            strength=data.get("strength", 0),
+            evidence=data.get("evidence", []),
+        )
+
+
+@dataclass(slots=True)
+class ArchitectureFlowStep:
+    step_id: str
+    label: str
+    node_kind: str
+    ref: str
+    file_path: str = ""
+    depth: int = 0
+    child_count: int = 0
+    visible_child_count: int = 0
+    collapsed_child_count: int = 0
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step_id": self.step_id,
+            "label": self.label,
+            "node_kind": self.node_kind,
+            "ref": self.ref,
+            "file_path": self.file_path,
+            "depth": self.depth,
+            "child_count": self.child_count,
+            "visible_child_count": self.visible_child_count,
+            "collapsed_child_count": self.collapsed_child_count,
+            "evidence": self.evidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ArchitectureFlowStep":
+        return cls(
+            step_id=data["step_id"],
+            label=data.get("label", ""),
+            node_kind=data.get("node_kind", ""),
+            ref=data.get("ref", ""),
+            file_path=data.get("file_path", ""),
+            depth=data.get("depth", 0),
+            child_count=data.get("child_count", 0),
+            visible_child_count=data.get("visible_child_count", 0),
+            collapsed_child_count=data.get("collapsed_child_count", 0),
+            evidence=data.get("evidence", []),
+        )
+
+
+@dataclass(slots=True)
+class ArchitectureFlow:
+    flow_id: str
+    entry: dict[str, Any]
+    scope: str
+    steps: list[ArchitectureFlowStep] = field(default_factory=list)
+    transitions: list[dict[str, Any]] = field(default_factory=list)
+    collapsed_subflows: list[dict[str, Any]] = field(default_factory=list)
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "flow_id": self.flow_id,
+            "entry": self.entry,
+            "scope": self.scope,
+            "steps": [step.to_dict() for step in self.steps],
+            "transitions": self.transitions,
+            "collapsed_subflows": self.collapsed_subflows,
+            "evidence": self.evidence,
+            "warnings": self.warnings,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ArchitectureFlow":
+        return cls(
+            flow_id=data["flow_id"],
+            entry=data.get("entry", {}),
+            scope=data.get("scope", ""),
+            steps=[ArchitectureFlowStep.from_dict(item) for item in data.get("steps", [])],
+            transitions=data.get("transitions", []),
+            collapsed_subflows=data.get("collapsed_subflows", []),
+            evidence=data.get("evidence", []),
+            warnings=data.get("warnings", []),
+        )
+
+
+@dataclass(slots=True)
 class AnalysisMeta:
     run_id: str
     fingerprint: str

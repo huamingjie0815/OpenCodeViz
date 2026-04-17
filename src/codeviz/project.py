@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import webbrowser
 from datetime import UTC, datetime
@@ -7,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from codeviz.analysis import analyze_project
+from codeviz.architecture import ARCHITECTURE_SCHEMA_VERSION, build_architecture_snapshot, build_flow_payload
 from codeviz.fingerprint import compute_fingerprint
 from codeviz.models import AnalysisMeta, ProjectStatus
 from codeviz.qa_agent import ProjectQAAgent
@@ -17,11 +19,18 @@ from codeviz.storage import (
     get_current_version_dir,
     graph_payload,
     graph_summary,
+    load_architecture,
+    load_files,
+    load_entities,
+    load_edges,
     list_versions,
     load_events,
+    load_flow_index,
     load_meta,
     load_project_info,
+    save_architecture,
     save_chat_turn,
+    save_flow_index,
     load_chat_turn,
     load_chat_session,
 )
@@ -49,6 +58,19 @@ class CodeVizProject:
 
     def _resolve_current_dir(self) -> None:
         resolved = get_current_version_dir(self.status)
+        if resolved is not None:
+            meta_path = resolved / "meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta.get("status") == "completed":
+                    self.status.current_dir = resolved
+                    return
+        versions = list_versions(self.status)
+        completed = [item for item in versions if item.get("status") == "completed" and item.get("run_id")]
+        if completed:
+            completed.sort(key=lambda item: item["run_id"])
+            self.status.current_dir = self.status.versions_dir / completed[-1]["run_id"]
+            return
         if resolved is not None:
             self.status.current_dir = resolved
 
@@ -282,6 +304,50 @@ class CodeVizProject:
         payload = graph_payload(self.status)
         payload["ok"] = True
         return payload
+
+    def _ensure_architecture_assets(self) -> tuple[dict, dict]:
+        architecture = load_architecture(self.status)
+        flow_index = load_flow_index(self.status)
+        schema_version = architecture.get("meta", {}).get("schema_version")
+        if architecture.get("modules") and flow_index.get("entries") and schema_version == ARCHITECTURE_SCHEMA_VERSION:
+            return architecture, flow_index
+
+        snapshot = build_architecture_snapshot(
+            load_files(self.status),
+            load_entities(self.status),
+            load_edges(self.status),
+        )
+        save_architecture(self.status, snapshot.modules, snapshot.dependencies, snapshot.meta)
+        save_flow_index(self.status, snapshot.flow_index, [])
+        return load_architecture(self.status), load_flow_index(self.status)
+
+    def architecture_payload(self) -> dict:
+        payload, _ = self._ensure_architecture_assets()
+        return {"ok": True, **payload}
+
+    def flow_index_payload(self) -> dict:
+        _, payload = self._ensure_architecture_assets()
+        return {"ok": True, **payload}
+
+    def flow_payload(self, entry: str) -> dict:
+        _, payload = self._ensure_architecture_assets()
+        entries = payload.get("entries", {})
+        known_values = {
+            item.get("value", "")
+            for group in entries.values()
+            for item in group
+            if item.get("value")
+        }
+        if entry not in known_values:
+            candidates = [
+                item
+                for group in entries.values()
+                for item in group
+            ]
+            return {"ok": False, "error": "entry_not_found", "candidates": candidates[:10]}
+
+        flow = build_flow_payload(entry, load_entities(self.status), load_edges(self.status))
+        return {"ok": True, **flow.to_dict()}
 
     def events_payload(self, after: int = 0) -> dict:
         events = load_events(self.status, after)

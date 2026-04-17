@@ -71,6 +71,10 @@
   const FLOW_EDGE_PRIORITY = { calls: 0, imports: 1, uses: 2 };
   const architectureLayoutApi = globalThis.ArchitectureLayout || null;
   const architectureInteractionsApi = globalThis.ArchitectureInteractions || null;
+  const flowLayoutApi = globalThis.FlowLayout || null;
+  const flowInteractionsApi = globalThis.FlowInteractions || null;
+  const flowSearchApi = globalThis.FlowSearch || null;
+  const viewSearchApi = globalThis.ViewSearch || null;
 
   // -- State ------------------------------------------------------------
   const states = {
@@ -113,6 +117,7 @@
   const flowControls = document.getElementById("flow-controls");
   const architectureBackButton = document.getElementById("architecture-back-button");
   const flowEntryInput = document.getElementById("flow-entry-input");
+  const flowEntryResults = document.getElementById("flow-entry-results");
   const flowRunButton = document.getElementById("flow-run-button");
   const leftSidebarToggle = document.getElementById("left-sidebar-toggle");
   const leftSidebarExpand = document.getElementById("left-sidebar-expand");
@@ -139,6 +144,7 @@
     nodes = states[view].nodes;
     links = states[view].links;
     entityMap = states[view].entityMap;
+    refreshSearchResults();
   }
 
   function resetViewTransform() {
@@ -290,6 +296,166 @@
     }
   }
 
+  function renderFlowGraph() {
+    stopSimulation();
+    ensureGraphDefs();
+    linkGroup.selectAll("*").remove();
+    nodeGroup.selectAll("*").remove();
+    g.selectAll(".arch-layer-label").remove();
+    g.selectAll(".arch-lanes").remove();
+
+    const layout = flowLayoutApi
+      ? flowLayoutApi.buildFlowLayout(states.flow.nodes, states.flow.links, width(), height())
+      : { nodes: [], edges: [] };
+
+    layout.nodes.forEach((node) => {
+      const stateNode = states.flow.entityMap[node.id];
+      if (!stateNode) return;
+      stateNode.x = node.x;
+      stateNode.y = node.y;
+      stateNode.width = node.width;
+      stateNode.height = node.height;
+    });
+
+    linkGroup
+      .selectAll("path.flow-edge")
+      .data(layout.edges, (d) => d.id)
+      .enter()
+      .append("path")
+      .attr("class", "edge flow-edge")
+      .attr("fill", "none")
+      .attr("stroke", (d) => EDGE_COLORS[d.type] || "#58a6ff")
+      .attr("stroke-width", 1.8)
+      .attr("stroke-opacity", 0.7)
+      .attr("marker-end", "url(#flow-arrow)")
+      .attr("d", (d) => d.path);
+
+    const nodeSel = nodeGroup.selectAll("g.flow-node").data(layout.nodes, (d) => d.id);
+    const enter = nodeSel
+      .enter()
+      .append("g")
+      .attr("class", "node flow-node")
+      .attr("transform", (d) => `translate(${d.x},${d.y})`)
+      .call(flowNodeDrag());
+
+    enter
+      .append("rect")
+      .attr("x", (d) => -(d.width || 220) / 2)
+      .attr("y", (d) => -(d.height || 64) / 2)
+      .attr("width", (d) => d.width || 220)
+      .attr("height", (d) => d.height || 64)
+      .attr("rx", 12);
+
+    enter
+      .append("text")
+      .attr("class", "flow-node-title")
+      .attr("x", (d) => -(d.width || 220) / 2 + 16)
+      .attr("y", -6)
+      .text((d) => d.name);
+
+    enter
+      .append("text")
+      .attr("class", "flow-node-meta")
+      .attr("x", (d) => -(d.width || 220) / 2 + 16)
+      .attr("y", 16)
+      .text((d) => d.file_path || "");
+
+    enter
+      .filter((d) => d.collapsedChildCount > 0)
+      .append("text")
+      .attr("class", "flow-node-badge")
+      .attr("x", (d) => (d.width || 220) / 2 - 16)
+      .attr("y", -6)
+      .attr("text-anchor", "end")
+      .text((d) => `+${d.collapsedChildCount}`);
+
+    enter
+      .on("mouseover", (event, d) => {
+        showTooltip(event, d);
+        applyFlowHighlight(d.id);
+      })
+      .on("mouseout", () => {
+        hideTooltip();
+        if (selectedNode && entityMap[selectedNode.id]) {
+          highlightNode(selectedNode.id);
+          return;
+        }
+        clearFlowHighlight();
+      })
+      .on("click", (event, d) => selectNode(d));
+
+    if (!selectedNode || !entityMap[selectedNode.id]) {
+      selectedNode = null;
+      clearFlowHighlight();
+    } else {
+      highlightNode(selectedNode.id);
+    }
+  }
+
+  function flowNodeDrag() {
+    return d3
+      .drag()
+      .on("start", () => {
+        selectedNode = null;
+        clearFlowHighlight();
+      })
+      .on("drag", function (event, d) {
+        const stateNode = states.flow.entityMap[d.id];
+        if (!stateNode) return;
+        stateNode.x = event.x;
+        stateNode.y = event.y;
+        d.x = event.x;
+        d.y = event.y;
+        d3.select(this).attr("transform", `translate(${d.x},${d.y})`);
+        updateFlowEdges();
+      });
+  }
+
+  function updateFlowEdges() {
+    linkGroup
+      .selectAll("path.flow-edge")
+      .attr("d", (d) => {
+        const sourceId = typeof d.source === "object" ? d.source.id : d.source;
+        const targetId = typeof d.target === "object" ? d.target.id : d.target;
+        const source = states.flow.entityMap[sourceId];
+        const target = states.flow.entityMap[targetId];
+        if (!source || !target) return "";
+        return buildFlowEdgePath(source, target);
+      });
+  }
+
+  function buildFlowEdgePath(source, target) {
+    if (flowInteractionsApi) {
+      return flowInteractionsApi.buildEdgePath(source, target);
+    }
+    const startX = source.x;
+    const startY = source.y + (source.height || 64) / 2;
+    const endX = target.x;
+    const endY = target.y - (target.height || 64) / 2;
+    const controlY = startY + Math.max(48, (endY - startY) * 0.45);
+    return `M ${startX} ${startY} C ${startX} ${controlY}, ${endX} ${endY - Math.max(24, (endY - startY) * 0.2)}, ${endX} ${endY}`;
+  }
+
+  function applyFlowHighlight(nodeId) {
+    const state = flowInteractionsApi
+      ? flowInteractionsApi.buildHighlightState(nodeId, states.flow.links)
+      : { nodeIds: new Set([nodeId]), edgeIds: new Set() };
+
+    nodeGroup
+      .selectAll("g.flow-node")
+      .classed("active", (d) => state.nodeIds.has(d.id))
+      .attr("opacity", (d) => (state.nodeIds.has(d.id) ? 1 : 0.18));
+
+    linkGroup
+      .selectAll("path.flow-edge")
+      .attr("stroke-opacity", (d) => (state.edgeIds.has(d.id) ? 0.92 : 0.08));
+  }
+
+  function clearFlowHighlight() {
+    nodeGroup.selectAll("g.flow-node").classed("active", false).attr("opacity", 1);
+    linkGroup.selectAll("path.flow-edge").attr("stroke-opacity", 0.7);
+  }
+
   function stopSimulation() {
     if (simulation) {
       simulation.stop();
@@ -360,6 +526,22 @@
         .attr("markerWidth", 8)
         .attr("markerHeight", 8)
         .attr("orient", "auto-start-reverse");
+      marker
+        .append("path")
+        .attr("d", "M 0 0 L 10 5 L 0 10 z")
+        .attr("fill", "#58a6ff");
+    }
+    marker = defs.select("#flow-arrow");
+    if (marker.empty()) {
+      marker = defs
+        .append("marker")
+        .attr("id", "flow-arrow")
+        .attr("viewBox", "0 0 10 10")
+        .attr("refX", 9)
+        .attr("refY", 5)
+        .attr("markerWidth", 8)
+        .attr("markerHeight", 8)
+        .attr("orient", "auto");
       marker
         .append("path")
         .attr("d", "M 0 0 L 10 5 L 0 10 z")
@@ -694,15 +876,25 @@
 
   function highlightNode(nodeId) {
     const connectedIds = new Set([nodeId]);
+    const connectedEdgeIds = new Set();
     links.forEach((l) => {
       const sid = typeof l.source === "object" ? l.source.id : l.source;
       const tid = typeof l.target === "object" ? l.target.id : l.target;
-      if (sid === nodeId) connectedIds.add(tid);
-      if (tid === nodeId) connectedIds.add(sid);
+      if (sid === nodeId) {
+        connectedIds.add(tid);
+        connectedEdgeIds.add(l.id);
+      }
+      if (tid === nodeId) {
+        connectedIds.add(sid);
+        connectedEdgeIds.add(l.id);
+      }
     });
     nodeGroup
       .selectAll("g.node")
       .attr("opacity", (d) => (connectedIds.has(d.id) ? 1 : 0.15));
+    nodeGroup
+      .selectAll("g.flow-node")
+      .classed("active", (d) => connectedIds.has(d.id));
     linkGroup
       .selectAll("line")
       .attr("stroke-opacity", (d) => {
@@ -710,11 +902,16 @@
         const tid = typeof d.target === "object" ? d.target.id : d.target;
         return sid === nodeId || tid === nodeId ? 0.8 : 0.05;
       });
+    linkGroup
+      .selectAll("path.flow-edge")
+      .attr("stroke-opacity", (d) => (connectedEdgeIds.has(d.id) ? 0.92 : 0.08));
   }
 
   function clearHighlight() {
     nodeGroup.selectAll("g.node").attr("opacity", 1);
+    nodeGroup.selectAll("g.flow-node").classed("active", false);
     linkGroup.selectAll("line").attr("stroke-opacity", 0.5);
+    linkGroup.selectAll("path.flow-edge").attr("stroke-opacity", 0.7);
   }
 
   svg.on("click", (e) => {
@@ -789,7 +986,7 @@
       if (architectureViewMode === "entity") return "Hover an entity to highlight its linked entities. Click a node to see details.";
       return "Hover a module to highlight its linked modules. Click to drill into files.";
     }
-    if (activeView === "flow") return "Enter a file path or entity id to generate a flow";
+    if (activeView === "flow") return "Use the flow entry box to generate a flow. Left search filters the current flow steps.";
     return "Click a node to see details";
   }
 
@@ -807,11 +1004,7 @@
 
   function doSearch(query) {
     searchResults.innerHTML = "";
-    if (!query.trim()) return;
-    const q = query.toLowerCase();
-    const hits = nodes
-      .filter((n) => n.name.toLowerCase().includes(q) || (n.file_path && n.file_path.toLowerCase().includes(q)))
-      .slice(0, 20);
+    const hits = filterVisibleNodes(query, 20);
     hits.forEach((n) => {
       const div = document.createElement("div");
       div.className = "search-item";
@@ -1044,8 +1237,7 @@
     fetch("/api/flow/index")
       .then((r) => r.json())
       .then((data) => {
-        const entries = data.entries || {};
-        flowCandidates = [...(entries.entity || []), ...(entries.file || [])];
+        flowCandidates = normalizeFlowCandidates(data.entries || {});
         if (!flowEntryInput.value && flowCandidates[0]) {
           flowEntryInput.value = flowCandidates[0].value;
         }
@@ -1058,7 +1250,7 @@
       clearState("flow");
       if (activeView === "flow") {
         bindState("flow");
-        renderGraph();
+        renderFlowGraph();
         renderDetailMessage(defaultDetailMessage());
         updateStats({ entities: 0, edges: 0 });
       }
@@ -1076,11 +1268,15 @@
               name: step.label,
               type: "function",
               file_path: step.file_path || "",
-              description: step.ref || "",
+              description: step.collapsed_child_count > 0 ? `${step.ref || ""}\n${step.collapsed_child_count} hidden child steps` : (step.ref || ""),
               signature: step.ref || "",
               language: "",
               degree: 0,
               degreeTier: "base",
+              depth: step.depth || 0,
+              childCount: step.child_count || 0,
+              visibleChildCount: step.visible_child_count || 0,
+              collapsedChildCount: step.collapsed_child_count || 0,
             };
             states.flow.nodes.push(node);
             states.flow.entityMap[node.id] = node;
@@ -1096,7 +1292,12 @@
               description: transition.edge_type || "",
             });
           });
-          renderDetailMessage(`Flow generated for ${data.entry ? data.entry.value : entry}`);
+          const truncated = (data.warnings || []).some((item) => item === "max_depth_reached" || item === "max_nodes_reached");
+          renderDetailMessage(
+            truncated
+              ? `Flow generated for ${data.entry ? data.entry.value : entry}. Some downstream steps were hidden by depth or node limits.`
+              : `Flow generated for ${data.entry ? data.entry.value : entry}`,
+          );
         } else {
           const suggestion = (data.candidates || []).slice(0, 5).map((item) => item.value).join("\n");
           renderDetailMessage(suggestion ? `Flow entry not found. Try:\n${suggestion}` : "Flow entry not found.");
@@ -1104,8 +1305,7 @@
         if (activeView === "flow") {
           bindState("flow");
           resetViewTransform();
-          initSimulation();
-          renderGraph();
+          renderFlowGraph();
           updateStats({ entities: states.flow.nodes.length, edges: states.flow.links.length });
         }
       })
@@ -1200,10 +1400,7 @@
 
   function updateSearchPlaceholder(viewName) {
     const view = viewName || activeView;
-    searchInput.placeholder =
-      view === "architecture" ? "Search modules..." :
-      view === "flow" ? "Search flow steps..." :
-      "Search entities...";
+    searchInput.placeholder = getSearchPlaceholder(view);
   }
 
   function setActiveView(nextView) {
@@ -1211,10 +1408,21 @@
       button.classList.toggle("active", button.dataset.view === nextView);
     });
     flowControls.hidden = nextView !== "flow";
+    hideFlowEntrySuggestions();
     legend.style.display = nextView === "flow" ? "none" : "flex";
     updateSearchPlaceholder(nextView);
     if (nextView === "architecture") {
       renderArchitectureModuleView();
+      return;
+    }
+    if (nextView === "flow") {
+      selectedNode = null;
+      bindState("flow");
+      resetViewTransform();
+      renderFlowGraph();
+      syncArchitectureBackButton();
+      renderDetailMessage(defaultDetailMessage());
+      updateStats({ entities: nodes.length, edges: links.length });
       return;
     }
     selectedNode = null;
@@ -1237,23 +1445,36 @@
     syncLabelToggle();
     labelToggle.addEventListener("change", () => {
       showLabels = labelToggle.checked;
+      if (activeView === "flow") {
+        renderFlowGraph();
+        return;
+      }
       renderGraph();
     });
   }
 
   if (flowRunButton) {
     flowRunButton.addEventListener("click", () => {
-      setActiveView("flow");
-      loadFlow(flowEntryInput.value.trim());
+      runFlow(flowEntryInput.value.trim());
     });
   }
 
   if (flowEntryInput) {
+    flowEntryInput.addEventListener("input", () => {
+      renderFlowEntrySuggestions(flowEntryInput.value);
+    });
+    flowEntryInput.addEventListener("focus", () => {
+      renderFlowEntrySuggestions(flowEntryInput.value);
+    });
+    flowEntryInput.addEventListener("blur", () => {
+      window.setTimeout(() => {
+        hideFlowEntrySuggestions();
+      }, 120);
+    });
     flowEntryInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        setActiveView("flow");
-        loadFlow(flowEntryInput.value.trim());
+        runFlow(flowEntryInput.value.trim());
       }
     });
   }
@@ -1434,6 +1655,10 @@
       renderArchitectureModuleView();
       return;
     }
+    if (activeView === "flow") {
+      renderFlowGraph();
+      return;
+    }
     if (simulation) {
       simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
       if (simulation.force("x")) simulation.force("x", d3.forceX(width() / 2).strength(0.05));
@@ -1452,4 +1677,94 @@
   loadArchitecture();
   loadFlowIndex();
   connectSSE();
+
+  function normalizeFlowCandidates(entries) {
+    if (flowSearchApi) {
+      return flowSearchApi.normalizeFlowCandidates(entries);
+    }
+    return [...(entries.entity || []), ...(entries.file || [])];
+  }
+
+  function filterFlowCandidates(query, limit) {
+    if (flowSearchApi) {
+      return flowSearchApi.filterFlowCandidates(flowCandidates, query, limit);
+    }
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return [];
+    return flowCandidates
+      .filter((candidate) => {
+        const label = String(candidate.label || "").toLowerCase();
+        const value = String(candidate.value || "").toLowerCase();
+        return label.includes(q) || value.includes(q);
+      })
+      .slice(0, limit || 12);
+  }
+
+  function getSearchPlaceholder(view) {
+    if (viewSearchApi) {
+      return viewSearchApi.getSearchPlaceholder(view);
+    }
+    if (view === "architecture") return "Search modules...";
+    if (view === "flow") return "Search flow steps...";
+    return "Search entities...";
+  }
+
+  function filterVisibleNodes(query, limit) {
+    if (viewSearchApi) {
+      return viewSearchApi.filterVisibleNodes(nodes, query, limit);
+    }
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return [];
+    return nodes
+      .filter((node) => {
+        const name = String(node.name || "").toLowerCase();
+        const filePath = String(node.file_path || "").toLowerCase();
+        return name.includes(q) || filePath.includes(q);
+      })
+      .slice(0, limit || 20);
+  }
+
+  function refreshSearchResults() {
+    doSearch(searchInput.value);
+  }
+
+  function hideFlowEntrySuggestions() {
+    if (!flowEntryResults) return;
+    flowEntryResults.hidden = true;
+    flowEntryResults.innerHTML = "";
+  }
+
+  function renderFlowEntrySuggestions(query) {
+    if (!flowEntryResults) return;
+    const matches = filterFlowCandidates(query, 8);
+    if (!matches.length) {
+      hideFlowEntrySuggestions();
+      return;
+    }
+    flowEntryResults.innerHTML = "";
+    matches.forEach((candidate) => {
+      const div = document.createElement("div");
+      div.className = "search-item";
+      div.innerHTML = `<span class="type-badge ${candidate.kind}">${escHtml(candidate.kind)}</span> ${escHtml(candidate.label)}`;
+      div.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+      div.addEventListener("click", () => {
+        flowEntryInput.value = candidate.value;
+        runFlow(candidate.value);
+      });
+      flowEntryResults.appendChild(div);
+    });
+    flowEntryResults.hidden = false;
+  }
+
+  function runFlow(entry) {
+    const nextEntry = String(entry || "").trim();
+    if (flowEntryInput) {
+      flowEntryInput.value = nextEntry;
+    }
+    hideFlowEntrySuggestions();
+    setActiveView("flow");
+    loadFlow(nextEntry);
+  }
 })();

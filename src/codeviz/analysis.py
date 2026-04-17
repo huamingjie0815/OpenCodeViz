@@ -8,6 +8,7 @@ from typing import Callable
 
 from codeviz.extractor import LLMExtractor
 from codeviz.fingerprint import compute_fingerprint, detect_language, iter_source_files
+from codeviz.architecture import build_architecture_snapshot
 from codeviz.models import (
     AnalysisMeta,
     DocumentRecord,
@@ -26,9 +27,11 @@ from codeviz.storage import (
     load_entities,
     load_edges,
     save_documents,
+    save_architecture,
     save_edges,
     save_entities,
     save_files,
+    save_flow_index,
     save_meta,
     save_project_info,
     set_current_version,
@@ -583,6 +586,14 @@ def analyze_project(
     meta.edge_count = len(all_edges)
     save_meta(vs, meta)
     emit("entities.deduped", dedup_stats)
+
+    architecture_snapshot = build_architecture_snapshot(file_records, all_entities, all_edges)
+    save_architecture(vs, architecture_snapshot.modules, architecture_snapshot.dependencies, architecture_snapshot.meta)
+    save_flow_index(vs, architecture_snapshot.flow_index, [])
+    emit("architecture.derived", {
+        "modules": len(architecture_snapshot.modules),
+        "dependencies": len(architecture_snapshot.dependencies),
+    })
 
     # 4. Cross-file relation resolution (LLM fallback for remaining unresolved)
     # Note: after _dedup_and_resolve, all_edges no longer contains unresolved edges.
