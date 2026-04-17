@@ -61,14 +61,60 @@ def _resolve_import_url(
     importing_file: str,
     known_files: set[str],
 ) -> str | None:
-    """Resolve an import url to a known file path using three-tier fuzzy matching.
+    """Resolve an import url to a known file path using multi-tier fuzzy matching.
 
+    Strategy 0: Python dotted module path (codeviz.models -> codeviz/models.py)
     Strategy 1: relative path exact resolution (./foo, ../bar)
     Strategy 2: filename stem fuzzy match (aliases, bare names)
     Strategy 3: longest common suffix disambiguation (multiple stem matches)
     """
     if not url:
         return None
+
+    # Strategy 0: Python dotted module path
+    # Detect: contains dots, no slashes, and not a relative path
+    if "." in url and "/" not in url and not url.startswith("."):
+        # Convert dots to path separators: codeviz.models -> codeviz/models
+        dotted_path = url.replace(".", "/")
+        # Try with each source extension
+        for ext in _SOURCE_EXTENSIONS:
+            candidate = dotted_path + ext
+            if candidate in known_files:
+                return candidate
+        # Try matching as a suffix of known file paths (handles src/codeviz/models.py)
+        dotted_parts = dotted_path.split("/")
+        suffix_matches: list[str] = []
+        for f in known_files:
+            f_no_ext = Path(f).with_suffix("").as_posix()
+            f_parts = f_no_ext.split("/")
+            if len(f_parts) >= len(dotted_parts) and f_parts[-len(dotted_parts):] == dotted_parts:
+                suffix_matches.append(f)
+        if len(suffix_matches) == 1:
+            return suffix_matches[0]
+        # If multiple matches, prefer shortest path (closest to direct module)
+        if suffix_matches:
+            suffix_matches.sort(key=len)
+            return suffix_matches[0]
+        # Also try matching just the last segment as a stem (foo.bar.baz -> baz)
+        last_segment = dotted_parts[-1]
+        stem_hits = [f for f in known_files if Path(f).stem == last_segment]
+        if len(stem_hits) == 1:
+            return stem_hits[0]
+        # Multiple stem hits: disambiguate with suffix matching
+        if len(stem_hits) > 1:
+            best: list[tuple[str, int]] = []
+            for f in stem_hits:
+                f_parts = Path(f).with_suffix("").parts
+                count = 0
+                for fp, dp in zip(reversed(f_parts), reversed(dotted_parts)):
+                    if fp == dp:
+                        count += 1
+                    else:
+                        break
+                best.append((f, count))
+            best.sort(key=lambda x: -x[1])
+            if best[0][1] > 0 and (len(best) == 1 or best[0][1] > best[1][1]):
+                return best[0][0]
 
     # Strategy 1: relative path
     if url.startswith("."):
@@ -88,9 +134,15 @@ def _resolve_import_url(
                     return c
 
     # Strategy 2: stem match
-    stem = Path(url.split("/")[-1]).stem
+    # For dotted urls without slashes, use the last dot-segment as the stem
+    # (avoids Path treating dots as file extensions: Path("codeviz.models").stem = "codeviz")
+    last_segment = url.split("/")[-1]
+    if "." in last_segment and "/" not in url:
+        stem = last_segment.rsplit(".", 1)[-1]
+    else:
+        stem = Path(last_segment).stem
     # Skip bare package names: no "/" in url and no "." in stem  -> stdlib/npm package
-    if "/" not in url and "." not in stem:
+    if "/" not in url and "." not in stem and "." not in url:
         return None
     if not stem:
         return None
@@ -110,6 +162,9 @@ def _resolve_import_url(
             break
     # Remove leading ./ or ../
     bare = bare.lstrip("./")
+    # For dotted module paths, convert dots to path separators for suffix matching
+    if "." in bare and "/" not in bare:
+        bare = bare.replace(".", "/")
     bare_parts = [p for p in bare.replace("\\", "/").split("/") if p]
 
     def _common_suffix_len(file_path: str) -> int:
@@ -126,8 +181,8 @@ def _resolve_import_url(
     max_score = max(s for _, s in scored)
     if max_score == 0:
         return None
-    best = [f for f, s in scored if s == max_score]
-    return best[0] if len(best) == 1 else None
+    best_matches = [f for f, s in scored if s == max_score]
+    return best_matches[0] if len(best_matches) == 1 else None
 
 
 def _build_cross_file_edges(
@@ -200,13 +255,16 @@ def _dedup_and_resolve(
     resolved_count = 0
     unresolved_count = 0
     deduped_edges: list[EdgeRecord] = []
+    newly_resolved: list[EdgeRecord] = []  # edges that went from unresolved -> resolved
     seen_edge_keys: set[str] = set()
 
     for edge in edges:
         src = id_remap.get(edge.source_id, edge.source_id)
         tgt = id_remap.get(edge.target_id, edge.target_id)
+        src_was_unresolved = src.startswith("unresolved:")
+        tgt_was_unresolved = tgt.startswith("unresolved:")
 
-        if src.startswith("unresolved:"):
+        if src_was_unresolved:
             resolved_src = _resolve_unresolved(
                 src, edge.file_path, edge.edge_type, name_index,
                 file_entity_index,
@@ -215,7 +273,7 @@ def _dedup_and_resolve(
                 src = resolved_src
                 resolved_count += 1
 
-        if tgt.startswith("unresolved:"):
+        if tgt_was_unresolved:
             resolved_tgt = _resolve_unresolved(
                 tgt, edge.file_path, edge.edge_type, name_index,
                 file_entity_index,
@@ -224,9 +282,11 @@ def _dedup_and_resolve(
                 tgt = resolved_tgt
                 resolved_count += 1
 
-        # Count remaining unresolved
+        # Drop edges where either endpoint is still unresolved — they reference
+        # stdlib/runtime symbols that are not user-defined entities.
         if src.startswith("unresolved:") or tgt.startswith("unresolved:"):
             unresolved_count += 1
+            continue
 
         # Deduplicate edges by (source, target, type)
         edge_key = (src, tgt, edge.edge_type)
@@ -235,7 +295,7 @@ def _dedup_and_resolve(
         seen_edge_keys.add(edge_key)
 
         new_edge_id = f"{edge.edge_type}:{src}->{tgt}"
-        deduped_edges.append(EdgeRecord(
+        resolved_edge = EdgeRecord(
             edge_id=new_edge_id,
             source_id=src,
             target_id=tgt,
@@ -243,7 +303,10 @@ def _dedup_and_resolve(
             file_path=edge.file_path,
             line=edge.line,
             description=edge.description,
-        ))
+        )
+        deduped_edges.append(resolved_edge)
+        if src_was_unresolved or tgt_was_unresolved:
+            newly_resolved.append(resolved_edge)
 
     stats = {
         "entities_before": len(entities),
@@ -253,6 +316,7 @@ def _dedup_and_resolve(
         "edges_after": len(deduped_edges),
         "resolved_deterministic": resolved_count,
         "remaining_unresolved": unresolved_count,
+        "edges": [e.to_dict() for e in newly_resolved],
     }
     return deduped_entities, deduped_edges, stats
 
@@ -521,20 +585,22 @@ def analyze_project(
     emit("entities.deduped", dedup_stats)
 
     # 4. Cross-file relation resolution (LLM fallback for remaining unresolved)
-    remaining = [e for e in all_edges if "unresolved:" in e.source_id or "unresolved:" in e.target_id]
-    if remaining:
-        emit("relations.resolving", {"unresolved_count": len(remaining)})
-        try:
-            xref_edges = extractor.resolve_cross_file_relations(all_entities, all_edges)
-            if xref_edges:
-                all_edges.extend(xref_edges)
-                append_edges(vs, xref_edges)
-                meta.edge_count = len(all_edges)
-            emit("relations.resolved", {"new_edges": len(xref_edges)})
-        except Exception as exc:
-            emit("relations.error", {"error": str(exc)})
-    else:
-        emit("relations.resolved", {"new_edges": 0, "skipped": True})
+    # Note: after _dedup_and_resolve, all_edges no longer contains unresolved edges.
+    # The LLM fallback is now a no-op for clean runs but kept for future extensibility.
+    xref_edges: list[EdgeRecord] = []
+    try:
+        xref_edges = extractor.resolve_cross_file_relations(all_entities, all_edges)
+        if xref_edges:
+            all_edges.extend(xref_edges)
+            append_edges(vs, xref_edges)
+            meta.edge_count = len(all_edges)
+            save_meta(vs, meta)
+    except Exception as exc:
+        emit("relations.error", {"error": str(exc)})
+    emit("relations.resolved", {
+        "new_edges": len(xref_edges),
+        "edges": [e.to_dict() for e in xref_edges],
+    })
 
     # 5. Generate project summary
     emit("project.summarizing", {})

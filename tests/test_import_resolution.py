@@ -22,6 +22,47 @@ KNOWN_FILES = {
     "lib/utils/parse.ts",
 }
 
+PYTHON_KNOWN_FILES = {
+    "src/codeviz/models.py",
+    "src/codeviz/analysis.py",
+    "src/codeviz/extractor.py",
+    "src/codeviz/storage.py",
+    "src/codeviz/fingerprint.py",
+    "src/codeviz/server.py",
+    "src/codeviz/project.py",
+    "src/codeviz/runtime_config.py",
+    "tests/test_import_resolution.py",
+}
+
+
+class TestResolveImportUrlPythonDotted:
+    def test_dotted_module_resolves_with_prefix(self):
+        result = _resolve_import_url("codeviz.models", "src/codeviz/analysis.py", PYTHON_KNOWN_FILES)
+        assert result == "src/codeviz/models.py"
+
+    def test_dotted_module_multiple_imports(self):
+        result = _resolve_import_url("codeviz.storage", "src/codeviz/analysis.py", PYTHON_KNOWN_FILES)
+        assert result == "src/codeviz/storage.py"
+
+    def test_dotted_module_from_different_file(self):
+        result = _resolve_import_url("codeviz.fingerprint", "src/codeviz/extractor.py", PYTHON_KNOWN_FILES)
+        assert result == "src/codeviz/fingerprint.py"
+
+    def test_dotted_module_direct_path_match(self):
+        # If the dotted path matches a known file directly (no prefix)
+        direct_files = {"mypackage/utils.py", "mypackage/models.py"}
+        result = _resolve_import_url("mypackage.utils", "mypackage/models.py", direct_files)
+        assert result == "mypackage/utils.py"
+
+    def test_dotted_stdlib_skipped(self):
+        # os.path has no matching file -> should return None
+        result = _resolve_import_url("os.path", "src/codeviz/analysis.py", PYTHON_KNOWN_FILES)
+        assert result is None
+
+    def test_dotted_nonexistent_module(self):
+        result = _resolve_import_url("codeviz.nonexistent", "src/codeviz/analysis.py", PYTHON_KNOWN_FILES)
+        assert result is None
+
 
 class TestResolveImportUrlRelative:
     def test_relative_same_dir_no_ext(self):

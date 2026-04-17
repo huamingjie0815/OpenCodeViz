@@ -204,7 +204,14 @@ class LLMExtractor:
     def __init__(self, config: dict | None = None):
         self.config = config or {}
         self._llm = None
-        self._structured_output_supported: bool | None = None  # None = untested
+        # Pre-disable structured output if explicitly configured off,
+        # or if a custom baseUrl is set (non-standard endpoints rarely support it).
+        cfg_flag = self.config.get("structuredOutput")
+        has_custom_base = bool(self.config.get("baseUrl", "").strip())
+        if cfg_flag is False or (cfg_flag is None and has_custom_base):
+            self._structured_output_supported: bool | None = False
+        else:
+            self._structured_output_supported = None  # None = untested
 
     @property
     def llm(self):

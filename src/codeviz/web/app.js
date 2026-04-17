@@ -145,9 +145,11 @@
     simulation = d3
       .forceSimulation(nodes)
       .force("link", d3.forceLink(links).id((d) => d.id).distance(60))
-      .force("charge", d3.forceManyBody().strength(-120))
+      .force("charge", d3.forceManyBody().strength(-50).distanceMax(250))
       .force("center", d3.forceCenter(width() / 2, height() / 2))
-      .force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 6))
+      .force("x", d3.forceX(width() / 2).strength(0.05))
+      .force("y", d3.forceY(height() / 2).strength(0.05))
+      .force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 4))
       .on("tick", ticked);
   }
 
@@ -221,7 +223,7 @@
     if (simulation) {
       simulation.nodes(nodes);
       simulation.force("link").links(links);
-      simulation.force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 6));
+      simulation.force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 4));
       simulation.alpha(0.3).restart();
     }
   }
@@ -283,6 +285,8 @@
     }
     if (simulation) {
       simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
+      if (simulation.force("x")) simulation.force("x", d3.forceX(width() / 2).strength(0.05));
+      if (simulation.force("y")) simulation.force("y", d3.forceY(height() / 2).strength(0.05));
       simulation.alpha(0.1).restart();
     }
   }
@@ -292,6 +296,8 @@
     app.classList.toggle(className, collapsed);
     if (simulation) {
       simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
+      if (simulation.force("x")) simulation.force("x", d3.forceX(width() / 2).strength(0.05));
+      if (simulation.force("y")) simulation.force("y", d3.forceY(height() / 2).strength(0.05));
       simulation.alpha(0.1).restart();
     }
   }
@@ -556,6 +562,14 @@
         renderGraph();
         updateStats();
       }
+    } else if (type === "entities.deduped") {
+      // Dedup pass resolved previously-unresolved cross-file edges; render them now.
+      const edges = payload.edges || [];
+      if (edges.length) {
+        mergeEdges(edges);
+        renderGraph();
+        updateStats();
+      }
     } else if (type === "relations.resolved") {
       const edges = payload.edges || [];
       if (edges.length) {
@@ -769,6 +783,8 @@
     setSidebarWidth("right", rightSidebarWidth);
     if (simulation) {
       simulation.force("center", d3.forceCenter(width() / 2, height() / 2));
+      if (simulation.force("x")) simulation.force("x", d3.forceX(width() / 2).strength(0.05));
+      if (simulation.force("y")) simulation.force("y", d3.forceY(height() / 2).strength(0.05));
       simulation.alpha(0.1).restart();
     }
   });
