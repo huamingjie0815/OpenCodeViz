@@ -41,6 +41,7 @@ jobs:
           previous_sha="${{ github.event.before }}"
           zero_sha="0000000000000000000000000000000000000000"
           previous_version=""
+          version_exists=false
 
           if [ "$previous_sha" != "$zero_sha" ] && git cat-file -e "${previous_sha}^{commit}" 2>/dev/null; then
             previous_version=$(
@@ -49,28 +50,28 @@ jobs:
           fi
 
           should_publish=true
-          reason="package version changed"
-
-          if [ -n "$previous_version" ] && [ "$previous_version" = "$current_version" ]; then
-            should_publish=false
-            reason="package.json version unchanged"
-          fi
+          reason="package version not published yet"
 
           if npm view "${package_name}@${current_version}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            version_exists=true
             should_publish=false
             reason="version already published"
+          elif [ -n "$previous_version" ] && [ "$previous_version" = "$current_version" ]; then
+            reason="package.json version unchanged, but version not published yet"
           fi
 
           echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
           echo "package_version=$current_version" >> "$GITHUB_OUTPUT"
           echo "previous_version=$previous_version" >> "$GITHUB_OUTPUT"
+          echo "version_exists=$version_exists" >> "$GITHUB_OUTPUT"
           echo "should_publish=$should_publish" >> "$GITHUB_OUTPUT"
           echo "reason=$reason" >> "$GITHUB_OUTPUT"
 
-          printf 'package=%s version=%s previous=%s should_publish=%s reason=%s\n' \
+          printf 'package=%s version=%s previous=%s version_exists=%s should_publish=%s reason=%s\n' \
             "$package_name" \
             "$current_version" \
             "${previous_version:-<none>}" \
+            "$version_exists" \
             "$should_publish" \
             "$reason"
 
