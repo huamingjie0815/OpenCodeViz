@@ -472,6 +472,11 @@ def analyze_project(
                 new_entities = result["entities"]
                 new_edges = result["edges"]
                 import_entities = result.get("import_entities", [])
+            elif mode == "hybrid" and not ast_extractor.has_parser(file_rec.language):
+                result = extractor.extract_file(file_path, content, file_rec.language)
+                new_entities = result["entities"]
+                new_edges = result["edges"]
+                import_entities = result.get("import_entities", [])
             else:
                 parse_result = ast_extractor.extract_file(file_path, content, file_rec.language)
                 resolved = resolve_file(

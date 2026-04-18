@@ -48,6 +48,26 @@ def helper():
     ]
 
 
+def test_python_parser_extracts_plain_import_statements() -> None:
+    parser = get_parser("python")
+    assert parser is not None
+
+    source = """
+import service as svc
+import metrics
+
+def boot():
+    return svc.run()
+""".strip()
+
+    result = parser.parse_file("src/app.py", source, "python")
+
+    assert [(item.module_path, item.imported_name, item.local_name) for item in result.imports] == [
+        ("service", "service", "svc"),
+        ("metrics", "metrics", "metrics"),
+    ]
+
+
 def test_typescript_parser_extracts_named_imports_and_method_calls() -> None:
     parser = get_parser("typescript")
     assert parser is not None

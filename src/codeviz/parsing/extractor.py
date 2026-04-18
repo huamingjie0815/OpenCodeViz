@@ -5,6 +5,9 @@ from codeviz.parsing.registry import get_parser
 
 
 class ASTExtractor:
+    def has_parser(self, language: str) -> bool:
+        return get_parser(language) is not None
+
     def extract_file(self, file_path: str, content: str, language: str) -> ParseResult:
         parser = get_parser(language)
         if parser is None:

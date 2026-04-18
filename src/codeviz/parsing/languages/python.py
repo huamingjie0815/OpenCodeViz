@@ -113,6 +113,36 @@ class PythonParser(TreeSitterSourceParser):
                         )
                     )
 
+        if node.type == "import_statement":
+            for child in node.named_children:
+                if child.type == "aliased_import":
+                    name_node = child.child_by_field_name("name")
+                    alias_node = child.child_by_field_name("alias")
+                    if name_node is None:
+                        continue
+                    imported_name = self.node_text(name_node, content)
+                    local_name = self.node_text(alias_node, content) if alias_node is not None else imported_name
+                    result.imports.append(
+                        ParseImport(
+                            module_path=imported_name,
+                            import_kind="named",
+                            imported_name=imported_name,
+                            local_name=local_name,
+                            line=self.line_number(node),
+                        )
+                    )
+                elif child.type == "dotted_name":
+                    imported_name = self.node_text(child, content)
+                    result.imports.append(
+                        ParseImport(
+                            module_path=imported_name,
+                            import_kind="named",
+                            imported_name=imported_name,
+                            local_name=imported_name,
+                            line=self.line_number(node),
+                        )
+                    )
+
         if node.type == "call" and parents:
             function_node = node.child_by_field_name("function")
             if function_node is not None:

@@ -259,6 +259,33 @@ def resolve_file(
                 )
             )
 
+    for relation in parse_result.inheritance:
+        source_id = entity_ids_by_local.get(relation.source_entity_local_id, "")
+        candidates = entity_ids_by_name.get(relation.target_name, [])
+        if source_id and len(candidates) == 1:
+            edges.append(
+                EdgeRecord(
+                    edge_id=f"{relation.relation_type}:{source_id}->{candidates[0]}:{relation.line}",
+                    source_id=source_id,
+                    target_id=candidates[0],
+                    edge_type=relation.relation_type,
+                    file_path=file_path,
+                    line=relation.line,
+                    description=f"{relation.relation_type} relation",
+                )
+            )
+        elif source_id:
+            unresolved.append(
+                UnresolvedRelation(
+                    source_id=source_id,
+                    edge_type=relation.relation_type,
+                    target_name=relation.target_name,
+                    file_path=file_path,
+                    line=relation.line,
+                    candidate_ids=candidates,
+                )
+            )
+
     import_entities: list[dict] = []
     for item in parse_result.imports:
         import_entities.append({"url": item.module_path, "names": [item.local_name]})

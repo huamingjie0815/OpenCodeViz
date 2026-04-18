@@ -1,4 +1,4 @@
-from codeviz.parsing.base import ParseCallSite, ParseEntity, ParseImport, ParseReference, ParseResult
+from codeviz.parsing.base import ParseCallSite, ParseEntity, ParseImport, ParseInheritance, ParseReference, ParseResult
 from codeviz.resolution.deterministic import resolve_file
 
 
@@ -58,6 +58,39 @@ def test_resolve_file_builds_use_edges_for_type_references() -> None:
     )
 
     assert any(edge.edge_type == "uses" and edge.target_id == "class:src/app.py:Config:1" for edge in resolved.edges)
+
+
+def test_resolve_file_builds_extends_edges() -> None:
+    parse_result = ParseResult(
+        entities=[
+            ParseEntity(local_id="class:src/app.py:BaseApp:1", name="BaseApp", kind="class", file_path="src/app.py", start_line=1, end_line=3, language="python"),
+            ParseEntity(local_id="class:src/app.py:App:5", name="App", kind="class", file_path="src/app.py", start_line=5, end_line=7, language="python"),
+        ],
+        inheritance=[
+            ParseInheritance(
+                source_entity_local_id="class:src/app.py:App:5",
+                target_name="BaseApp",
+                relation_type="extends",
+                line=5,
+            )
+        ],
+    )
+
+    resolved = resolve_file(
+        file_path="src/app.py",
+        language="python",
+        parse_result=parse_result,
+        known_files={"src/app.py"},
+        file_entity_index={},
+        pending_imports={},
+    )
+
+    assert any(
+        edge.edge_type == "extends"
+        and edge.source_id == "class:src/app.py:App:5"
+        and edge.target_id == "class:src/app.py:BaseApp:1"
+        for edge in resolved.edges
+    )
 
 
 def test_resolve_file_keeps_ambiguous_call_unresolved() -> None:

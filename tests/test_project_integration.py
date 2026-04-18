@@ -7,7 +7,7 @@ import pytest
 
 from codeviz.project import CodeVizProject
 from codeviz.server import CodeVizServer
-from codeviz.models import ProjectInfo
+from codeviz.models import EntityRecord, ProjectInfo
 
 
 def fake_server_start(self):
@@ -244,3 +244,44 @@ def test_analyze_ast_mode_writes_entities_without_llm_file_extraction(fixture_pr
     assert result["ok"] is True
     assert len(payload["entities"]) >= 1
     assert any(entity["name"] == "runService" for entity in payload["entities"])
+
+
+def test_hybrid_mode_falls_back_to_llm_for_unsupported_language(tmp_path: Path, monkeypatch) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "src" / "service.rb").write_text(
+        "class Service\n  def call\n    Helper.run\n  end\nend\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda self, file_path, content, language: {
+            "entities": [
+                EntityRecord(
+                    entity_id="class:src/service.rb:Service:1",
+                    entity_type="class",
+                    name="Service",
+                    file_path=file_path,
+                    start_line=1,
+                    end_line=4,
+                    language=language,
+                )
+            ],
+            "edges": [],
+            "import_entities": [],
+        },
+    )
+
+    project = CodeVizProject(project_root)
+    project.config = {"extractorMode": "hybrid", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert any(entity["name"] == "Service" for entity in payload["entities"])
