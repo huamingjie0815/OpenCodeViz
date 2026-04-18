@@ -5,6 +5,7 @@ src/codeviz/__init__.py
 src/codeviz/__main__.py
 src/codeviz/analysis.py
 src/codeviz/app.py
+src/codeviz/architecture.py
 src/codeviz/cli.py
 src/codeviz/commands.py
 src/codeviz/extractor.py
@@ -21,8 +22,22 @@ src/codeviz.egg-info/dependency_links.txt
 src/codeviz.egg-info/entry_points.txt
 src/codeviz.egg-info/requires.txt
 src/codeviz.egg-info/top_level.txt
+src/codeviz/parsing/__init__.py
+src/codeviz/parsing/base.py
+src/codeviz/parsing/extractor.py
+src/codeviz/parsing/registry.py
+src/codeviz/parsing/tree_sitter_parser.py
+src/codeviz/parsing/languages/python.py
 src/codeviz/web/app.js
+src/codeviz/web/architecture-interactions.js
+src/codeviz/web/architecture-layout.js
+src/codeviz/web/flow-interactions.js
+src/codeviz/web/flow-layout.js
+src/codeviz/web/flow-search.js
 src/codeviz/web/index.html
+src/codeviz/web/view-search.js
+tests/test_architecture.py
+tests/test_ast_parsing.py
 tests/test_cli.py
 tests/test_fingerprint.py
 tests/test_fixtures.py
@@ -30,4 +45,5 @@ tests/test_import_resolution.py
 tests/test_port_selection.py
 tests/test_project_integration.py
 tests/test_qa_streaming.py
+tests/test_runtime_config.py
 tests/test_storage.py
