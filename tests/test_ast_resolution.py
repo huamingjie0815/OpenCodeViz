@@ -93,6 +93,48 @@ def test_resolve_file_builds_extends_edges() -> None:
     )
 
 
+def test_resolve_file_builds_cross_file_call_edges_for_import_aliases() -> None:
+    parse_result = ParseResult(
+        entities=[
+            ParseEntity(local_id="function:src/app.ts:boot:1", name="boot", kind="function", file_path="src/app.ts", start_line=1, end_line=4, language="typescript"),
+        ],
+        imports=[
+            ParseImport(module_path="./helper", import_kind="named", imported_name="helper", local_name="runHelper", line=1),
+            ParseImport(module_path="./metrics", import_kind="namespace", imported_name="*", local_name="metrics", line=2),
+        ],
+        call_sites=[
+            ParseCallSite(source_entity_local_id="function:src/app.ts:boot:1", callee_name="runHelper", line=2),
+            ParseCallSite(source_entity_local_id="function:src/app.ts:boot:1", callee_name="record", callee_qualifier="metrics", line=3),
+        ],
+    )
+
+    resolved = resolve_file(
+        file_path="src/app.ts",
+        language="typescript",
+        parse_result=parse_result,
+        known_files={"src/app.ts", "src/helper.ts", "src/metrics.ts"},
+        file_entity_index={
+            "src/helper.ts": {"helper": "function:src/helper.ts:helper:1"},
+            "src/metrics.ts": {"record": "function:src/metrics.ts:record:1"},
+        },
+        pending_imports={},
+    )
+
+    assert any(
+        edge.edge_type == "calls"
+        and edge.source_id == "function:src/app.ts:boot:1"
+        and edge.target_id == "function:src/helper.ts:helper:1"
+        for edge in resolved.edges
+    )
+    assert any(
+        edge.edge_type == "calls"
+        and edge.source_id == "function:src/app.ts:boot:1"
+        and edge.target_id == "function:src/metrics.ts:record:1"
+        for edge in resolved.edges
+    )
+    assert resolved.unresolved == []
+
+
 def test_resolve_file_keeps_ambiguous_call_unresolved() -> None:
     parse_result = ParseResult(
         entities=[

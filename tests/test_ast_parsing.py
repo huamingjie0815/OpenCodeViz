@@ -75,7 +75,7 @@ def test_typescript_parser_extracts_named_imports_and_method_calls() -> None:
     source = """
 import { helper as runHelper } from "./helper";
 
-class App extends BaseApp {
+class App extends BaseApp implements Renderable {
   boot() {
     runHelper();
     this.render();
@@ -93,7 +93,10 @@ class App extends BaseApp {
         ("runHelper", ""),
         ("render", "this"),
     ]
-    assert result.inheritance[0].target_name == "BaseApp"
+    assert [(item.target_name, item.relation_type) for item in result.inheritance] == [
+        ("BaseApp", "extends"),
+        ("Renderable", "implements"),
+    ]
 
 
 def test_javascript_parser_extracts_default_and_namespace_imports() -> None:
@@ -120,4 +123,23 @@ export function boot() {
     assert [(item.callee_name, item.callee_qualifier) for item in result.call_sites] == [
         ("service", ""),
         ("record", "metrics"),
+    ]
+
+
+def test_javascript_parser_extracts_default_exports() -> None:
+    parser = get_parser("javascript")
+    assert parser is not None
+
+    source = """
+export default function service() {
+  return 42;
+}
+""".strip()
+
+    result = parser.parse_file("src/service.js", source, "javascript")
+
+    assert [entity.name for entity in result.entities] == ["service"]
+    assert result.entities[0].exported is True
+    assert [(item.export_name, item.local_name) for item in result.exports] == [
+        ("default", "service"),
     ]

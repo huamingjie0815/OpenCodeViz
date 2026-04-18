@@ -19,7 +19,7 @@ from codeviz.models import (
     ProjectInfo,
     ProjectStatus,
 )
-from codeviz.resolution.deterministic import resolve_file
+from codeviz.resolution.deterministic import _build_cross_file_relation_edges, resolve_file
 from codeviz.resolution.fallback import resolve_unresolved_relations
 from codeviz.runtime_config import extractor_mode, fallback_mode
 from codeviz.storage import (
@@ -122,6 +122,13 @@ def _resolve_import_url(
             best.sort(key=lambda x: -x[1])
             if best[0][1] > 0 and (len(best) == 1 or best[0][1] > best[1][1]):
                 return best[0][0]
+
+    if "/" not in url and "." not in url and Path(importing_file).suffix in {".py", ".pyi"}:
+        sibling_base = (Path(importing_file).parent / url).as_posix().lstrip("/")
+        for ext in (".py", ".pyi"):
+            candidate = sibling_base + ext
+            if candidate in known_files:
+                return candidate
 
     # Strategy 1: relative path
     if url.startswith("."):
@@ -453,6 +460,8 @@ def analyze_project(
     file_entity_index: dict[str, dict[str, str]] = {}
     # {target_file: [(source_entity_id, entity_name, importing_file)]} — pending matches
     pending_imports: dict[str, list[tuple[str, str, str]]] = {}
+    # {target_file: [PendingRelation]} — pending cross-file inheritance matches
+    pending_relations: dict[str, list] = {}
     known_files: set[str] = {fr.path for fr in file_records}
 
     for file_rec in file_records:
@@ -467,6 +476,7 @@ def analyze_project(
                 emit("file.skipped", {"file": file_path, "reason": "too large"})
                 continue
 
+            used_ast = False
             if mode == "llm":
                 result = extractor.extract_file(file_path, content, file_rec.language)
                 new_entities = result["entities"]
@@ -486,11 +496,13 @@ def analyze_project(
                     known_files=known_files,
                     file_entity_index=file_entity_index,
                     pending_imports=pending_imports,
+                    pending_relations=pending_relations,
                 )
                 new_entities = resolved.entities
                 new_edges = resolved.edges
                 import_entities = resolved.import_entities
                 all_unresolved.extend(resolved.unresolved)
+                used_ast = True
 
             all_entities.extend(new_entities)
             all_edges.extend(new_edges)
@@ -501,79 +513,84 @@ def analyze_project(
                 if e.name not in file_index:
                     file_index[e.name] = e.entity_id
 
-            # Pick a representative source entity for file-level import edges:
-            # prefer the first non-method entity, fall back to any entity
-            source_entity_id = ""
-            for e in new_entities:
-                if e.entity_type != "method":
-                    source_entity_id = e.entity_id
-                    break
-            if not source_entity_id and new_entities:
-                source_entity_id = new_entities[0].entity_id
-
-            # Build a lookup: imported name -> set of entity_ids that reference it
-            # (entities in this file that call/use the imported name)
-            callers_of: dict[str, list[str]] = {}
-            for e in new_edges:
-                # target_id for unresolved cross-file refs looks like "unresolved:file:name"
-                tgt = e.target_id
-                if tgt.startswith(f"unresolved:{file_path}:"):
-                    ref_name = tgt.split(":", 2)[2]
-                    # Ignore dotted built-in names (e.g. console.error)
-                    if "." not in ref_name:
-                        callers_of.setdefault(ref_name, []).append(e.source_id)
-
-            # Process import_entities: resolve url -> target file and match names
             import_cross_edges: list[EdgeRecord] = []
-            for imp in import_entities:
-                url = imp.get("url", "")
-                names = imp.get("names", [])
-                if not url or not names:
-                    continue
+            if not used_ast:
+                # Pick a representative source entity for file-level import edges:
+                # prefer the first non-method entity, fall back to any entity
+                source_entity_id = ""
+                for e in new_entities:
+                    if e.entity_type != "method":
+                        source_entity_id = e.entity_id
+                        break
+                if not source_entity_id and new_entities:
+                    source_entity_id = new_entities[0].entity_id
 
-                target_file = _resolve_import_url(url, file_path, known_files)
-                if not target_file:
-                    continue
+                # Build a lookup: imported name -> set of entity_ids that reference it
+                # (entities in this file that call/use the imported name)
+                callers_of: dict[str, list[str]] = {}
+                for e in new_edges:
+                    # target_id for unresolved cross-file refs looks like "unresolved:file:name"
+                    tgt = e.target_id
+                    if tgt.startswith(f"unresolved:{file_path}:"):
+                        ref_name = tgt.split(":", 2)[2]
+                        # Ignore dotted built-in names (e.g. console.error)
+                        if "." not in ref_name:
+                            callers_of.setdefault(ref_name, []).append(e.source_id)
 
-                for name in names:
-                    if not name:
+                # Process import_entities: resolve url -> target file and match names
+                for imp in import_entities:
+                    url = imp.get("url", "")
+                    names = imp.get("names", [])
+                    if not url or not names:
                         continue
-                    # Prefer callers of this name as source; fall back to file representative
-                    callers = callers_of.get(name, [])
-                    src_ids = callers if callers else (
-                        [source_entity_id] if source_entity_id else [f"unresolved:{file_path}:{name}"]
-                    )
-                    if target_file in file_entity_index:
-                        # Target already parsed — resolve immediately
-                        target_id = file_entity_index[target_file].get(name)
-                        if target_id:
+
+                    target_file = _resolve_import_url(url, file_path, known_files)
+                    if not target_file:
+                        continue
+
+                    for name in names:
+                        if not name:
+                            continue
+                        # Prefer callers of this name as source; fall back to file representative
+                        callers = callers_of.get(name, [])
+                        src_ids = callers if callers else (
+                            [source_entity_id] if source_entity_id else [f"unresolved:{file_path}:{name}"]
+                        )
+                        if target_file in file_entity_index:
+                            # Target already parsed — resolve immediately
+                            target_id = file_entity_index[target_file].get(name)
+                            if target_id:
+                                for src_id in src_ids:
+                                    edge_id = f"imports:{src_id}->{target_id}"
+                                    import_cross_edges.append(EdgeRecord(
+                                        edge_id=edge_id,
+                                        source_id=src_id,
+                                        target_id=target_id,
+                                        edge_type="imports",
+                                        file_path=file_path,
+                                        line=0,
+                                        description=f"imported from {target_file}",
+                                    ))
+                        else:
+                            # Target not yet parsed — queue for later
                             for src_id in src_ids:
-                                edge_id = f"imports:{src_id}->{target_id}"
-                                import_cross_edges.append(EdgeRecord(
-                                    edge_id=edge_id,
-                                    source_id=src_id,
-                                    target_id=target_id,
-                                    edge_type="imports",
-                                    file_path=file_path,
-                                    line=0,
-                                    description=f"imported from {target_file}",
-                                ))
-                    else:
-                        # Target not yet parsed — queue for later
-                        for src_id in src_ids:
-                            pending_imports.setdefault(target_file, []).append(
-                                (src_id, name, file_path)
-                            )
+                                pending_imports.setdefault(target_file, []).append(
+                                    (src_id, name, file_path)
+                                )
 
             # Reverse check: flush any pending imports waiting for THIS file
             resolved_now = _build_cross_file_edges(
                 pending_imports, file_entity_index, {file_path}
             )
             import_cross_edges.extend(resolved_now)
+            relation_cross_edges = _build_cross_file_relation_edges(
+                pending_relations, file_entity_index, {file_path}
+            )
 
             all_edges.extend(import_cross_edges)
+            all_edges.extend(relation_cross_edges)
 
-            all_edges_for_file = new_edges + import_cross_edges
+            all_edges_for_file = new_edges + import_cross_edges + relation_cross_edges
             append_entities(vs, new_entities)
             append_edges(vs, all_edges_for_file)
 
@@ -600,6 +617,17 @@ def analyze_project(
             emit("relations.import_flush", {
                 "resolved": len(leftover_edges),
                 "still_pending": sum(len(v) for v in pending_imports.values()),
+            })
+    if pending_relations:
+        leftover_relation_edges = _build_cross_file_relation_edges(
+            pending_relations, file_entity_index, set(file_entity_index.keys())
+        )
+        if leftover_relation_edges:
+            all_edges.extend(leftover_relation_edges)
+            append_edges(vs, leftover_relation_edges)
+            emit("relations.inheritance_flush", {
+                "resolved": len(leftover_relation_edges),
+                "still_pending": sum(len(v) for v in pending_relations.values()),
             })
 
     meta.entity_count = len(all_entities)

@@ -36,6 +36,11 @@ PYTHON_KNOWN_FILES = {
 
 
 class TestResolveImportUrlPythonDotted:
+    def test_bare_sibling_module_resolves_relative_to_python_file(self):
+        direct_files = {"src/a_app.py", "src/b_base.py"}
+        result = _resolve_import_url("b_base", "src/a_app.py", direct_files)
+        assert result == "src/b_base.py"
+
     def test_dotted_module_resolves_with_prefix(self):
         result = _resolve_import_url("codeviz.models", "src/codeviz/analysis.py", PYTHON_KNOWN_FILES)
         assert result == "src/codeviz/models.py"

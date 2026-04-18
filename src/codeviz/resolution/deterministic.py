@@ -18,6 +18,15 @@ class UnresolvedRelation:
 
 
 @dataclass(slots=True)
+class PendingRelation:
+    source_id: str
+    edge_type: str
+    target_name: str
+    file_path: str
+    line: int
+
+
+@dataclass(slots=True)
 class ResolvedFileResult:
     entities: list[EntityRecord]
     edges: list[EdgeRecord]
@@ -73,6 +82,13 @@ def _resolve_import_url(
             best.sort(key=lambda item: -item[1])
             if best[0][1] > 0 and (len(best) == 1 or best[0][1] > best[1][1]):
                 return best[0][0]
+
+    if "/" not in url and "." not in url and Path(importing_file).suffix in {".py", ".pyi"}:
+        sibling_base = (Path(importing_file).parent / url).as_posix().lstrip("/")
+        for ext in (".py", ".pyi"):
+            candidate = sibling_base + ext
+            if candidate in known_files:
+                return candidate
 
     if url.startswith("."):
         base = Path(importing_file).parent / url
@@ -167,6 +183,97 @@ def _build_cross_file_edges(
     return new_edges
 
 
+def _build_cross_file_relation_edges(
+    pending_relations: dict[str, list[PendingRelation]],
+    file_entity_index: dict[str, dict[str, str]],
+    resolved_files: set[str],
+) -> list[EdgeRecord]:
+    new_edges: list[EdgeRecord] = []
+    resolved_targets = [target for target in list(pending_relations.keys()) if target in resolved_files]
+
+    for target_file in resolved_targets:
+        target_index = file_entity_index.get(target_file, {})
+        remaining: list[PendingRelation] = []
+        for relation in pending_relations[target_file]:
+            target_id = target_index.get(relation.target_name)
+            if target_id:
+                new_edges.append(
+                    EdgeRecord(
+                        edge_id=f"{relation.edge_type}:{relation.source_id}->{target_id}:{relation.line}",
+                        source_id=relation.source_id,
+                        target_id=target_id,
+                        edge_type=relation.edge_type,
+                        file_path=relation.file_path,
+                        line=relation.line,
+                        description=f"{relation.edge_type} relation",
+                    )
+                )
+            else:
+                remaining.append(relation)
+        if remaining:
+            pending_relations[target_file] = remaining
+        else:
+            del pending_relations[target_file]
+
+    return new_edges
+
+
+def _collect_import_sources(parse_result, entity_ids_by_local: dict[str, str]) -> dict[str, list[str]]:
+    source_ids_by_name: dict[str, set[str]] = {}
+
+    def add_source(name: str, source_entity_local_id: str) -> None:
+        if not name or not source_entity_local_id:
+            return
+        source_id = entity_ids_by_local.get(source_entity_local_id)
+        if not source_id:
+            return
+        source_ids_by_name.setdefault(name, set()).add(source_id)
+
+    for item in parse_result.imports:
+        add_source(item.local_name, item.source_entity_local_id)
+
+    for call in parse_result.call_sites:
+        add_source(call.callee_name, call.source_entity_local_id)
+        add_source(call.callee_qualifier, call.source_entity_local_id)
+
+    for reference in parse_result.references:
+        add_source(reference.name, reference.source_entity_local_id)
+        add_source(reference.qualifier, reference.source_entity_local_id)
+
+    for relation in parse_result.inheritance:
+        add_source(relation.target_name, relation.source_entity_local_id)
+
+    return {
+        name: sorted(source_ids)
+        for name, source_ids in source_ids_by_name.items()
+    }
+
+
+def _resolve_imported_call_target(call, imports_by_local: dict[str, tuple[object, str]]) -> tuple[str, str] | None:
+    if call.callee_qualifier:
+        imported = imports_by_local.get(call.callee_qualifier)
+        if imported is None:
+            return None
+        item, target_file = imported
+        if not target_file:
+            return None
+        if item.import_kind == "namespace" or item.imported_name == item.module_path:
+            return target_file, call.callee_name
+        return None
+
+    imported = imports_by_local.get(call.callee_name)
+    if imported is None:
+        return None
+    item, target_file = imported
+    if not target_file:
+        return None
+    if item.import_kind == "default":
+        return target_file, "default"
+    if item.import_kind == "named" and item.imported_name != item.module_path:
+        return target_file, item.imported_name
+    return None
+
+
 def resolve_file(
     file_path: str,
     language: str,
@@ -174,12 +281,14 @@ def resolve_file(
     known_files: set[str],
     file_entity_index: dict[str, dict[str, str]],
     pending_imports: dict[str, list[tuple[str, str, str]]],
+    pending_relations: dict[str, list[PendingRelation]] | None = None,
 ) -> ResolvedFileResult:
     entities: list[EntityRecord] = []
     edges: list[EdgeRecord] = []
     unresolved: list[UnresolvedRelation] = []
     entity_ids_by_local: dict[str, str] = {}
     entity_ids_by_name: dict[str, list[str]] = {}
+    pending_relations = pending_relations if pending_relations is not None else {}
 
     for parsed in parse_result.entities:
         entity = EntityRecord(
@@ -196,6 +305,16 @@ def resolve_file(
         entities.append(entity)
         entity_ids_by_local[parsed.local_id] = entity.entity_id
         entity_ids_by_name.setdefault(parsed.name, []).append(entity.entity_id)
+
+    current_file_index = file_entity_index.setdefault(file_path, {})
+    for parsed in parse_result.entities:
+        entity_id = entity_ids_by_local.get(parsed.local_id)
+        if entity_id and parsed.name not in current_file_index:
+            current_file_index[parsed.name] = entity_id
+    for export in parse_result.exports:
+        candidates = entity_ids_by_name.get(export.local_name, [])
+        if len(candidates) == 1 and export.export_name not in current_file_index:
+            current_file_index[export.export_name] = candidates[0]
 
     for parsed in parse_result.entities:
         if not parsed.parent_local_id:
@@ -215,6 +334,22 @@ def resolve_file(
                 )
             )
 
+    resolved_imports = [
+        (item, _resolve_import_url(item.module_path, file_path, known_files))
+        for item in parse_result.imports
+    ]
+    import_sources = _collect_import_sources(parse_result, entity_ids_by_local)
+    imports_by_local = {
+        item.local_name: (item, target_file)
+        for item, target_file in resolved_imports
+        if item.local_name
+    }
+    imported_targets = {
+        item.local_name: (target_file, item.imported_name)
+        for item, target_file in resolved_imports
+        if target_file
+    }
+
     for call in parse_result.call_sites:
         source_id = entity_ids_by_local.get(call.source_entity_local_id, f"unresolved:{file_path}:{call.source_entity_local_id}")
         candidates = entity_ids_by_name.get(call.callee_name, [])
@@ -230,6 +365,34 @@ def resolve_file(
                     description="direct call",
                 )
             )
+            continue
+
+        imported_target = _resolve_imported_call_target(call, imports_by_local)
+        if imported_target is not None:
+            target_file, target_name = imported_target
+            target_id = file_entity_index.get(target_file, {}).get(target_name, "")
+            if target_id:
+                edges.append(
+                    EdgeRecord(
+                        edge_id=f"calls:{source_id}->{target_id}:{call.line}",
+                        source_id=source_id,
+                        target_id=target_id,
+                        edge_type="calls",
+                        file_path=file_path,
+                        line=call.line,
+                        description="direct call",
+                    )
+                )
+            else:
+                pending_relations.setdefault(target_file, []).append(
+                    PendingRelation(
+                        source_id=source_id,
+                        edge_type="calls",
+                        target_name=target_name,
+                        file_path=file_path,
+                        line=call.line,
+                    )
+                )
         else:
             unresolved.append(
                 UnresolvedRelation(
@@ -274,6 +437,31 @@ def resolve_file(
                     description=f"{relation.relation_type} relation",
                 )
             )
+        elif source_id and relation.target_name in imported_targets:
+            target_file, imported_name = imported_targets[relation.target_name]
+            target_id = file_entity_index.get(target_file, {}).get(imported_name, "")
+            if target_id:
+                edges.append(
+                    EdgeRecord(
+                        edge_id=f"{relation.relation_type}:{source_id}->{target_id}:{relation.line}",
+                        source_id=source_id,
+                        target_id=target_id,
+                        edge_type=relation.relation_type,
+                        file_path=file_path,
+                        line=relation.line,
+                        description=f"{relation.relation_type} relation",
+                    )
+                )
+            else:
+                pending_relations.setdefault(target_file, []).append(
+                    PendingRelation(
+                        source_id=source_id,
+                        edge_type=relation.relation_type,
+                        target_name=imported_name,
+                        file_path=file_path,
+                        line=relation.line,
+                    )
+                )
         elif source_id:
             unresolved.append(
                 UnresolvedRelation(
@@ -287,27 +475,30 @@ def resolve_file(
             )
 
     import_entities: list[dict] = []
-    for item in parse_result.imports:
+    for item, target_file in resolved_imports:
         import_entities.append({"url": item.module_path, "names": [item.local_name]})
-        target_file = _resolve_import_url(item.module_path, file_path, known_files)
         if not target_file:
             continue
-        source_id = entities[0].entity_id if entities else f"unresolved:{file_path}:{item.local_name}"
+        source_ids = import_sources.get(item.local_name)
+        if not source_ids:
+            source_ids = [entities[0].entity_id] if entities else [f"unresolved:{file_path}:{item.local_name}"]
         if target_file in file_entity_index and item.imported_name in file_entity_index[target_file]:
             target_id = file_entity_index[target_file][item.imported_name]
-            edges.append(
-                EdgeRecord(
-                    edge_id=f"imports:{source_id}->{target_id}",
-                    source_id=source_id,
-                    target_id=target_id,
-                    edge_type="imports",
-                    file_path=file_path,
-                    line=item.line,
-                    description=f"imported from {target_file}",
+            for source_id in source_ids:
+                edges.append(
+                    EdgeRecord(
+                        edge_id=f"imports:{source_id}->{target_id}",
+                        source_id=source_id,
+                        target_id=target_id,
+                        edge_type="imports",
+                        file_path=file_path,
+                        line=item.line,
+                        description=f"imported from {target_file}",
+                    )
                 )
-            )
         else:
-            pending_imports.setdefault(target_file, []).append((source_id, item.imported_name, file_path))
+            for source_id in source_ids:
+                pending_imports.setdefault(target_file, []).append((source_id, item.imported_name, file_path))
 
     return ResolvedFileResult(
         entities=entities,
