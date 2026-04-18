@@ -46,3 +46,58 @@ def helper():
     assert [(item.source_entity_local_id, item.target_name, item.relation_type) for item in result.inheritance] == [
         ("class:src/app.py:App:3", "BaseApp", "extends"),
     ]
+
+
+def test_typescript_parser_extracts_named_imports_and_method_calls() -> None:
+    parser = get_parser("typescript")
+    assert parser is not None
+
+    source = """
+import { helper as runHelper } from "./helper";
+
+class App extends BaseApp {
+  boot() {
+    runHelper();
+    this.render();
+  }
+}
+""".strip()
+
+    result = parser.parse_file("src/app.ts", source, "typescript")
+
+    assert [entity.name for entity in result.entities] == ["App", "boot"]
+    assert [(item.module_path, item.imported_name, item.local_name) for item in result.imports] == [
+        ("./helper", "helper", "runHelper"),
+    ]
+    assert [(item.callee_name, item.callee_qualifier) for item in result.call_sites] == [
+        ("runHelper", ""),
+        ("render", "this"),
+    ]
+    assert result.inheritance[0].target_name == "BaseApp"
+
+
+def test_javascript_parser_extracts_default_and_namespace_imports() -> None:
+    parser = get_parser("javascript")
+    assert parser is not None
+
+    source = """
+import service from "./service";
+import * as metrics from "./metrics";
+
+export function boot() {
+  service();
+  metrics.record();
+}
+""".strip()
+
+    result = parser.parse_file("src/app.js", source, "javascript")
+
+    assert [entity.name for entity in result.entities] == ["boot"]
+    assert [(item.import_kind, item.imported_name, item.local_name) for item in result.imports] == [
+        ("default", "default", "service"),
+        ("namespace", "*", "metrics"),
+    ]
+    assert [(item.callee_name, item.callee_qualifier) for item in result.call_sites] == [
+        ("service", ""),
+        ("record", "metrics"),
+    ]
