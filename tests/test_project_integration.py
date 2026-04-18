@@ -7,6 +7,7 @@ import pytest
 
 from codeviz.project import CodeVizProject
 from codeviz.server import CodeVizServer
+from codeviz.models import ProjectInfo
 
 
 def fake_server_start(self):
@@ -222,3 +223,24 @@ def test_open_prefers_latest_completed_snapshot_when_current_is_incomplete(fixtu
     reopened = CodeVizProject(fixture_project)
 
     assert reopened.status.current_dir == completed_dir
+
+
+def test_analyze_ast_mode_writes_entities_without_llm_file_extraction(fixture_project: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("llm file extraction should not run")),
+    )
+
+    project = CodeVizProject(fixture_project)
+    project.config = {"extractorMode": "ast", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert len(payload["entities"]) >= 1
+    assert any(entity["name"] == "runService" for entity in payload["entities"])

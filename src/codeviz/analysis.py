@@ -9,6 +9,7 @@ from typing import Callable
 from codeviz.extractor import LLMExtractor
 from codeviz.fingerprint import compute_fingerprint, detect_language, iter_source_files
 from codeviz.architecture import build_architecture_snapshot
+from codeviz.parsing import ASTExtractor
 from codeviz.models import (
     AnalysisMeta,
     DocumentRecord,
@@ -18,6 +19,9 @@ from codeviz.models import (
     ProjectInfo,
     ProjectStatus,
 )
+from codeviz.resolution.deterministic import resolve_file
+from codeviz.resolution.fallback import resolve_unresolved_relations
+from codeviz.runtime_config import extractor_mode, fallback_mode
 from codeviz.storage import (
     append_edges,
     append_entities,
@@ -435,10 +439,14 @@ def analyze_project(
     meta.doc_count = len(documents)
     emit("docs.collected", {"count": len(documents)})
 
-    # 3. Per-file LLM extraction
+    # 3. Per-file extraction
     extractor = LLMExtractor(config)
+    ast_extractor = ASTExtractor()
+    mode = extractor_mode(config or {})
+    fallback = fallback_mode(config or {})
     all_entities: list[EntityRecord] = []
     all_edges: list[EdgeRecord] = []
+    all_unresolved: list = []
 
     # Incremental cross-file import resolution state
     # {file_path: {entity_name: entity_id}} — grows as each file is parsed
@@ -459,10 +467,25 @@ def analyze_project(
                 emit("file.skipped", {"file": file_path, "reason": "too large"})
                 continue
 
-            result = extractor.extract_file(file_path, content, file_rec.language)
-            new_entities = result["entities"]
-            new_edges = result["edges"]
-            import_entities = result.get("import_entities", [])
+            if mode == "llm":
+                result = extractor.extract_file(file_path, content, file_rec.language)
+                new_entities = result["entities"]
+                new_edges = result["edges"]
+                import_entities = result.get("import_entities", [])
+            else:
+                parse_result = ast_extractor.extract_file(file_path, content, file_rec.language)
+                resolved = resolve_file(
+                    file_path=file_path,
+                    language=file_rec.language,
+                    parse_result=parse_result,
+                    known_files=known_files,
+                    file_entity_index=file_entity_index,
+                    pending_imports=pending_imports,
+                )
+                new_entities = resolved.entities
+                new_edges = resolved.edges
+                import_entities = resolved.import_entities
+                all_unresolved.extend(resolved.unresolved)
 
             all_entities.extend(new_entities)
             all_edges.extend(new_edges)
@@ -595,12 +618,12 @@ def analyze_project(
         "dependencies": len(architecture_snapshot.dependencies),
     })
 
-    # 4. Cross-file relation resolution (LLM fallback for remaining unresolved)
-    # Note: after _dedup_and_resolve, all_edges no longer contains unresolved edges.
-    # The LLM fallback is now a no-op for clean runs but kept for future extensibility.
     xref_edges: list[EdgeRecord] = []
     try:
-        xref_edges = extractor.resolve_cross_file_relations(all_entities, all_edges)
+        if mode == "llm":
+            xref_edges = extractor.resolve_cross_file_relations(all_entities, all_edges)
+        else:
+            xref_edges = resolve_unresolved_relations(all_unresolved, all_entities, extractor, fallback)
         if xref_edges:
             all_edges.extend(xref_edges)
             append_edges(vs, xref_edges)

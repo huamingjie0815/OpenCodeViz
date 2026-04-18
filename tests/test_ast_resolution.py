@@ -83,3 +83,23 @@ def test_resolve_file_keeps_ambiguous_call_unresolved() -> None:
     assert [(item.edge_type, item.target_name, item.line) for item in resolved.unresolved] == [
         ("calls", "render", 2),
     ]
+
+
+def test_resolve_unresolved_relations_skips_items_without_candidates() -> None:
+    from codeviz.extractor import LLMExtractor
+    from codeviz.resolution.deterministic import UnresolvedRelation
+    from codeviz.resolution.fallback import resolve_unresolved_relations
+
+    extractor = LLMExtractor(config={"provider": "openai", "model": "gpt-4o-mini"})
+    unresolved = [
+        UnresolvedRelation(
+            source_id="function:src/app.ts:boot:1",
+            edge_type="calls",
+            target_name="render",
+            file_path="src/app.ts",
+            line=2,
+            candidate_ids=[],
+        )
+    ]
+
+    assert resolve_unresolved_relations(unresolved, [], extractor, "auto") == []

@@ -177,6 +177,8 @@ Common config fields:
 - `apiKeyEnv`
 - `baseUrl`
 - `port`
+- `extractorMode`
+- `fallbackMode`
 
 Supported environment variables:
 
@@ -186,6 +188,8 @@ Supported environment variables:
 - `CODEVIZ_API_KEY`
 - `CODEVIZ_API_KEY_ENV`
 - `CODEVIZ_BASE_URL`
+- `CODEVIZ_EXTRACTOR_MODE`
+- `CODEVIZ_FALLBACK_MODE`
 
 Current default model mapping:
 
@@ -201,9 +205,23 @@ Example project config:
   "model": "gpt-4o-mini",
   "apiKeyEnv": "OPENAI_API_KEY",
   "baseUrl": "https://api.openai.com/v1",
-  "port": 39127
+  "port": 39127,
+  "extractorMode": "hybrid",
+  "fallbackMode": "auto"
 }
 ```
+
+Extraction modes:
+
+- `llm`: keep the legacy per-file LLM extractor
+- `ast`: use AST-only extraction and skip per-file LLM extraction
+- `hybrid`: use AST-first extraction with unresolved-only LLM fallback
+
+Fallback modes:
+
+- `off`: never invoke unresolved fallback
+- `auto`: invoke fallback only for unresolved relations with viable candidates
+- `always`: attempt fallback for every eligible unresolved relation
 
 ### Setup Modes
 
