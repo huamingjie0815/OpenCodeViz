@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codeviz.analysis import _resolve_import_url, _build_cross_file_edges
+from codeviz.resolution.deterministic import _resolve_import_url, _build_cross_file_edges
 from codeviz.models import EdgeRecord
 
 
