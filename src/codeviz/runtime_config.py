@@ -34,3 +34,18 @@ def runtime_api_key(config: dict) -> str:
     if env_name:
         return os.environ.get(env_name, "")
     return ""
+
+
+def _normalized_mode(value: str, allowed: set[str], default: str) -> str:
+    lowered = (value or "").strip().lower()
+    return lowered if lowered in allowed else default
+
+
+def extractor_mode(config: dict) -> str:
+    raw = os.environ.get("CODEVIZ_EXTRACTOR_MODE", config.get("extractorMode", "hybrid"))
+    return _normalized_mode(raw, {"llm", "ast", "hybrid"}, "hybrid")
+
+
+def fallback_mode(config: dict) -> str:
+    raw = os.environ.get("CODEVIZ_FALLBACK_MODE", config.get("fallbackMode", "auto"))
+    return _normalized_mode(raw, {"off", "auto", "always"}, "auto")

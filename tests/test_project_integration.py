@@ -7,6 +7,7 @@ import pytest
 
 from codeviz.project import CodeVizProject
 from codeviz.server import CodeVizServer
+from codeviz.models import EntityRecord, ProjectInfo
 
 
 def fake_server_start(self):
@@ -222,3 +223,236 @@ def test_open_prefers_latest_completed_snapshot_when_current_is_incomplete(fixtu
     reopened = CodeVizProject(fixture_project)
 
     assert reopened.status.current_dir == completed_dir
+
+
+def test_analyze_ast_mode_writes_entities_without_llm_file_extraction(fixture_project: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("llm file extraction should not run")),
+    )
+
+    project = CodeVizProject(fixture_project)
+    project.config = {"extractorMode": "ast", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert len(payload["entities"]) >= 1
+    assert any(entity["name"] == "runService" for entity in payload["entities"])
+
+
+def test_hybrid_mode_falls_back_to_llm_for_unsupported_language(tmp_path: Path, monkeypatch) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "src" / "service.rb").write_text(
+        "class Service\n  def call\n    Helper.run\n  end\nend\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda self, file_path, content, language: {
+            "entities": [
+                EntityRecord(
+                    entity_id="class:src/service.rb:Service:1",
+                    entity_type="class",
+                    name="Service",
+                    file_path=file_path,
+                    start_line=1,
+                    end_line=4,
+                    language=language,
+                )
+            ],
+            "edges": [],
+            "import_entities": [],
+        },
+    )
+
+    project = CodeVizProject(project_root)
+    project.config = {"extractorMode": "hybrid", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert any(entity["name"] == "Service" for entity in payload["entities"])
+
+
+def test_analyze_ast_mode_resolves_cross_file_inheritance_when_base_is_parsed_later(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "src" / "a_app.py").write_text(
+        "from b_base import BaseApp\n\nclass App(BaseApp):\n    pass\n",
+        encoding="utf-8",
+    )
+    (project_root / "src" / "b_base.py").write_text(
+        "class BaseApp:\n    pass\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("llm file extraction should not run")),
+    )
+
+    project = CodeVizProject(project_root)
+    project.config = {"extractorMode": "ast", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert any(
+        edge["edge_type"] == "extends"
+        and edge["source_id"] == "class:src/a_app.py:App:3"
+        and edge["target_id"] == "class:src/b_base.py:BaseApp:1"
+        for edge in payload["edges"]
+    )
+
+
+def test_analyze_ast_mode_attributes_import_edge_to_actual_caller(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "src" / "a_consumer.py").write_text(
+        "from b_helper import helper\n\n"
+        "def one():\n    return 1\n\n"
+        "def two():\n    return helper()\n",
+        encoding="utf-8",
+    )
+    (project_root / "src" / "b_helper.py").write_text(
+        "def helper():\n    return 42\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("llm file extraction should not run")),
+    )
+
+    project = CodeVizProject(project_root)
+    project.config = {"extractorMode": "ast", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    import_sources = [
+        edge["source_id"]
+        for edge in payload["edges"]
+        if edge["edge_type"] == "imports"
+        and edge["target_id"] == "function:src/b_helper.py:helper:1"
+    ]
+    assert import_sources == ["function:src/a_consumer.py:two:6"]
+
+
+def test_analyze_ast_mode_resolves_cross_file_calls_for_import_alias_when_target_is_parsed_later(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "src" / "a_consumer.py").write_text(
+        "from b_helper import helper as run_helper\n\n"
+        "def boot():\n    return run_helper()\n",
+        encoding="utf-8",
+    )
+    (project_root / "src" / "b_helper.py").write_text(
+        "def helper():\n    return 42\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("llm file extraction should not run")),
+    )
+
+    project = CodeVizProject(project_root)
+    project.config = {"extractorMode": "ast", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert any(
+        edge["edge_type"] == "calls"
+        and edge["source_id"] == "function:src/a_consumer.py:boot:3"
+        and edge["target_id"] == "function:src/b_helper.py:helper:1"
+        for edge in payload["edges"]
+    )
+
+
+def test_analyze_ast_mode_resolves_default_import_edges_and_calls(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "src").mkdir(parents=True)
+    (project_root / "src" / "a_consumer.js").write_text(
+        'import service from "./b_service";\n\n'
+        "export function boot() {\n"
+        "  return service();\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (project_root / "src" / "b_service.js").write_text(
+        "export default function service() {\n"
+        "  return 42;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "codeviz.analysis.extract_project_info",
+        lambda root, documents, extractor: ProjectInfo(name=root.name, root=str(root)),
+    )
+    monkeypatch.setattr(
+        "codeviz.extractor.LLMExtractor.extract_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("llm file extraction should not run")),
+    )
+
+    project = CodeVizProject(project_root)
+    project.config = {"extractorMode": "ast", "fallbackMode": "off"}
+
+    result = project.analyze()
+    payload = project.graph_api_payload()
+
+    assert result["ok"] is True
+    assert any(
+        edge["edge_type"] == "imports"
+        and edge["source_id"] == "function:src/a_consumer.js:boot:3"
+        and edge["target_id"] == "function:src/b_service.js:service:1"
+        for edge in payload["edges"]
+    )
+    assert any(
+        edge["edge_type"] == "calls"
+        and edge["source_id"] == "function:src/a_consumer.js:boot:3"
+        and edge["target_id"] == "function:src/b_service.js:service:1"
+        for edge in payload["edges"]
+    )

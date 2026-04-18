@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codeviz.analysis import _resolve_import_url, _build_cross_file_edges
+from codeviz.resolution.deterministic import _resolve_import_url, _build_cross_file_edges
 from codeviz.models import EdgeRecord
 
 
@@ -36,6 +36,11 @@ PYTHON_KNOWN_FILES = {
 
 
 class TestResolveImportUrlPythonDotted:
+    def test_bare_sibling_module_resolves_relative_to_python_file(self):
+        direct_files = {"src/a_app.py", "src/b_base.py"}
+        result = _resolve_import_url("b_base", "src/a_app.py", direct_files)
+        assert result == "src/b_base.py"
+
     def test_dotted_module_resolves_with_prefix(self):
         result = _resolve_import_url("codeviz.models", "src/codeviz/analysis.py", PYTHON_KNOWN_FILES)
         assert result == "src/codeviz/models.py"

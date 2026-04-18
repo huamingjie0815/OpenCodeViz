@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: codeviz
-Version: 0.1.1
+Version: 0.2.2
 Summary: AI-powered local code graph visualization and codebase Q&A tool
 License-Expression: MIT
 Requires-Python: >=3.12
@@ -12,6 +12,10 @@ Requires-Dist: langchain-core<1,>=0.3
 Requires-Dist: langchain-openai<1,>=0.3
 Requires-Dist: langchain-anthropic<1,>=0.3
 Requires-Dist: langchain-google-genai<3,>=2
+Requires-Dist: tree-sitter<0.25,>=0.24
+Requires-Dist: tree-sitter-python<0.24,>=0.23
+Requires-Dist: tree-sitter-javascript<0.24,>=0.23
+Requires-Dist: tree-sitter-typescript<0.24,>=0.23
 Provides-Extra: runtime
 Requires-Dist: deepagents>=0.0.0; extra == "runtime"
 Dynamic: license-file
@@ -47,11 +51,12 @@ OpenCodeViz scans source code and Markdown documents, extracts entities and rela
 ### Features
 
 - Multi-language repository scanning
-- Code graph extraction for entities and relations
-- Markdown document ingestion for project context
+- Interactive code visualization (graph view) for exploring entities and relationships
+- Architecture diagrams (module/package dependency layouts and visual summaries)
+- Flow diagrams (call and data flow visualizations across files and services)
 - Versioned analysis snapshots
-- Local web UI for graph browsing
 - Project Q&A based on the latest snapshot
+
 
 ### Supported Source Types
 
@@ -381,11 +386,12 @@ OpenCodeViz 是一个面向真实本地仓库的代码关系图和项目问答�
 ### 功能
 
 - 多语言仓库扫描
-- 代码实体与关系图抽取
-- Markdown 文档收集与索引
+- 代码可视化（交互式图谱视图），便于探索实体与依赖关系
+- 架构图（模块/包依赖布局与可视化摘要）
+- 流程图（跨文件与服务的调用/数据流可视化）
 - 版本化分析快照
-- 本地图谱界面
 - 基于快照的项目问答
+
 
 ### 支持的源码类型
 

@@ -71,6 +71,8 @@
   const FLOW_EDGE_PRIORITY = { calls: 0, imports: 1, uses: 2 };
   const architectureLayoutApi = globalThis.ArchitectureLayout || null;
   const architectureInteractionsApi = globalThis.ArchitectureInteractions || null;
+  const codeLegendFilterApi = globalThis.CodeLegendFilter || null;
+  const codeLayoutApi = globalThis.CodeLayout || null;
   const flowLayoutApi = globalThis.FlowLayout || null;
   const flowInteractionsApi = globalThis.FlowInteractions || null;
   const flowSearchApi = globalThis.FlowSearch || null;
@@ -90,6 +92,8 @@
   let selectedNode = null;
   let searchTimeout = null;
   let showLabels = true;
+  let hiddenCodeTypes = new Set();
+  let renderedNodeIds = new Set();
   let leftSidebarWidth = 320;
   let rightSidebarWidth = 360;
   let flowCandidates = [];
@@ -116,6 +120,7 @@
   });
   const labelToggle = document.getElementById("label-toggle");
   const legend = document.getElementById("legend");
+  const codeLegendButtons = Array.from(document.querySelectorAll(".legend-filter"));
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
   const chatMessages = document.getElementById("chat-messages");
@@ -150,7 +155,32 @@
     nodes = states[view].nodes;
     links = states[view].links;
     entityMap = states[view].entityMap;
+    if (view === "code") {
+      syncCodeGraphState();
+    } else {
+      renderedNodeIds = new Set(nodes.map((node) => node.id));
+    }
     refreshSearchResults();
+  }
+
+  function visibleCodeGraph() {
+    if (!codeLegendFilterApi) {
+      return {
+        nodes: states.code.nodes,
+        links: states.code.links,
+        nodeIds: new Set(states.code.nodes.map((node) => node.id)),
+      };
+    }
+    return codeLegendFilterApi.buildVisibleCodeGraph(states.code.nodes, states.code.links, hiddenCodeTypes);
+  }
+
+  function syncCodeGraphState() {
+    if (activeView !== "code") return;
+    const graph = visibleCodeGraph();
+    nodes = graph.nodes;
+    links = graph.links;
+    renderedNodeIds = graph.nodeIds;
+    entityMap = states.code.entityMap;
   }
 
   function resetViewTransform() {
@@ -195,14 +225,27 @@
     if (simulation) {
       simulation.stop();
     }
+    if (activeView === "code") {
+      syncCodeGraphState();
+    } else {
+      renderedNodeIds = new Set(nodes.map((node) => node.id));
+    }
+    const forceConfig = codeLayoutApi
+      ? codeLayoutApi.buildForceLayoutConfig(activeView, nodes.length)
+      : {
+          linkDistance: activeView === "flow" ? 90 : 60,
+          chargeStrength: activeView === "architecture" ? -120 : -50,
+          chargeDistanceMax: 250,
+          collisionPadding: 4,
+        };
     simulation = d3
       .forceSimulation(nodes)
-      .force("link", d3.forceLink(links).id((d) => d.id).distance(activeView === "flow" ? 90 : 60))
-      .force("charge", d3.forceManyBody().strength(activeView === "architecture" ? -120 : -50).distanceMax(250))
+      .force("link", d3.forceLink(links).id((d) => d.id).distance(forceConfig.linkDistance))
+      .force("charge", d3.forceManyBody().strength(forceConfig.chargeStrength).distanceMax(forceConfig.chargeDistanceMax))
       .force("center", d3.forceCenter(width() / 2, height() / 2))
       .force("x", d3.forceX(width() / 2).strength(0.05))
       .force("y", d3.forceY(height() / 2).strength(0.05))
-      .force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 4))
+      .force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + forceConfig.collisionPadding))
       .on("tick", ticked);
   }
 
@@ -220,6 +263,11 @@
   }
 
   function renderGraph() {
+    if (activeView === "code") {
+      syncCodeGraphState();
+    } else {
+      renderedNodeIds = new Set(nodes.map((node) => node.id));
+    }
     linkGroup.selectAll("*").remove();
     nodeGroup.selectAll("*").remove();
     g.selectAll(".arch-layer-label").remove();
@@ -284,14 +332,29 @@
       .on("click", (event, d) => selectNode(d));
 
     if (simulation) {
+      const forceConfig = codeLayoutApi
+        ? codeLayoutApi.buildForceLayoutConfig(activeView, nodes.length)
+        : { collisionPadding: 4 };
       simulation.nodes(nodes);
       simulation.force("link").links(links);
-      simulation.force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + 4));
+      simulation.force("collision", d3.forceCollide().radius((d) => getNodeRadius(d) + forceConfig.collisionPadding));
       simulation.alpha(0.3).restart();
     }
 
-    if (!selectedNode || !entityMap[selectedNode.id]) {
+    const selectedExists = !!selectedNode && (
+      activeView === "code"
+        ? !!states.code.entityMap[selectedNode.id]
+        : !!entityMap[selectedNode.id]
+    );
+
+    if (!selectedNode || !selectedExists) {
       selectedNode = null;
+      if (activeView === "architecture") {
+        clearArchitectureHighlight();
+      } else {
+        clearHighlight();
+      }
+    } else if (!renderedNodeIds.has(selectedNode.id)) {
       if (activeView === "architecture") {
         clearArchitectureHighlight();
       } else {
@@ -860,7 +923,11 @@
       return;
     }
     selectedNode = d;
-    highlightNode(d.id);
+    if (renderedNodeIds.has(d.id)) {
+      highlightNode(d.id);
+    } else {
+      clearHighlight();
+    }
     renderDetail(d);
   }
 
@@ -933,11 +1000,13 @@
   });
 
   function renderDetail(d) {
-    const incoming = links.filter((l) => {
+    const detailLinks = activeView === "code" ? states.code.links : links;
+    const detailEntityMap = activeView === "code" ? states.code.entityMap : entityMap;
+    const incoming = detailLinks.filter((l) => {
       const tid = typeof l.target === "object" ? l.target.id : l.target;
       return tid === d.id;
     });
-    const outgoing = links.filter((l) => {
+    const outgoing = detailLinks.filter((l) => {
       const sid = typeof l.source === "object" ? l.source.id : l.source;
       return sid === d.id;
     });
@@ -958,7 +1027,7 @@
       html.push('<div class="neighbors"><strong>Incoming:</strong>');
       incoming.forEach((l) => {
         const sid = typeof l.source === "object" ? l.source.id : l.source;
-        const src = entityMap[sid];
+        const src = detailEntityMap[sid];
         if (src) html.push(`<div class="neighbor-item" data-id="${sid}">${src.name} (${l.type})</div>`);
       });
       html.push("</div>");
@@ -967,7 +1036,7 @@
       html.push('<div class="neighbors"><strong>Outgoing:</strong>');
       outgoing.forEach((l) => {
         const tid = typeof l.target === "object" ? l.target.id : l.target;
-        const tgt = entityMap[tid];
+        const tgt = detailEntityMap[tid];
         if (tgt) html.push(`<div class="neighbor-item" data-id="${tid}">${tgt.name} (${l.type})</div>`);
       });
       html.push("</div>");
@@ -1017,6 +1086,7 @@
   }
 
   function zoomToNode(d) {
+    if (!renderedNodeIds.has(d.id)) return;
     const x = d.x || 0;
     const y = d.y || 0;
     svg
@@ -1081,7 +1151,7 @@
           initSimulation();
           renderGraph();
           renderDetailMessage(defaultDetailMessage());
-          updateStats({ entities: states.code.nodes.length, edges: states.code.links.length });
+          updateStats();
         }
       })
       .catch(() => { });
@@ -1328,7 +1398,7 @@
       const data = JSON.parse(e.data);
       updateStatusBadge(data);
       if (activeView === "code") {
-        updateStats(data.summary);
+        updateStats();
       }
     });
     source.addEventListener("open", () => {
@@ -1354,7 +1424,7 @@
         if (activeView === "code") {
           bindState("code");
           renderGraph();
-          updateStats({ entities: states.code.nodes.length, edges: states.code.links.length });
+          updateStats();
         }
       }
     } else if (type === "entities.deduped" || type === "relations.resolved") {
@@ -1364,7 +1434,7 @@
         if (activeView === "code") {
           bindState("code");
           renderGraph();
-          updateStats({ entities: states.code.nodes.length, edges: states.code.links.length });
+          updateStats();
         }
       }
     } else if (type === "analysis.completed") {
@@ -1392,6 +1462,18 @@
     labelToggle.checked = showLabels;
   }
 
+  function syncCodeLegend() {
+    codeLegendButtons.forEach((button) => {
+      const type = button.dataset.codeType;
+      const active = !hiddenCodeTypes.has(type);
+      const enabled = activeView === "code";
+      button.classList.toggle("active", active);
+      button.disabled = !enabled;
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.setAttribute("aria-disabled", enabled ? "false" : "true");
+    });
+  }
+
   function updateStats(summary) {
     const s = summary || { entities: nodes.length, edges: links.length };
     statsLabel.textContent = `${s.entities || nodes.length} entities, ${s.edges || links.length} edges`;
@@ -1410,6 +1492,8 @@
     hideFlowEntrySuggestions();
     legend.style.display = nextView === "flow" ? "none" : "flex";
     updateSearchPlaceholder(nextView);
+    activeView = nextView;
+    syncCodeLegend();
     if (nextView === "architecture") {
       renderArchitectureModuleView();
       return;
@@ -1431,7 +1515,7 @@
     renderGraph();
     syncArchitectureBackButton();
     renderDetailMessage(defaultDetailMessage());
-    updateStats({ entities: nodes.length, edges: links.length });
+    updateStats();
   }
 
   viewTabs.forEach((button) => {
@@ -1451,6 +1535,18 @@
       renderGraph();
     });
   }
+
+  codeLegendButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (activeView !== "code" || !codeLegendFilterApi) return;
+      hiddenCodeTypes = codeLegendFilterApi.toggleHiddenType(hiddenCodeTypes, button.dataset.codeType);
+      syncCodeLegend();
+      syncCodeGraphState();
+      initSimulation();
+      renderGraph();
+      updateStats();
+    });
+  });
 
   if (flowRunButton) {
     flowRunButton.addEventListener("click", () => {
@@ -1677,6 +1773,7 @@
   initSidebarControls();
   updateSearchPlaceholder();
   bindState("code");
+  syncCodeLegend();
   initSimulation();
   renderGraph();
   renderDetailMessage(defaultDetailMessage());
@@ -1717,12 +1814,13 @@
   }
 
   function filterVisibleNodes(query, limit) {
+    const searchNodes = activeView === "code" ? states.code.nodes : nodes;
     if (viewSearchApi) {
-      return viewSearchApi.filterVisibleNodes(nodes, query, limit);
+      return viewSearchApi.filterVisibleNodes(searchNodes, query, limit);
     }
     const q = String(query || "").trim().toLowerCase();
     if (!q) return [];
-    return nodes
+    return searchNodes
       .filter((node) => {
         const name = String(node.name || "").toLowerCase();
         const filePath = String(node.file_path || "").toLowerCase();

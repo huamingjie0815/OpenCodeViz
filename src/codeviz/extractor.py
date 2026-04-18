@@ -244,6 +244,13 @@ class LLMExtractor:
             parsed.setdefault(key, default)
         return parsed
 
+    def invoke_json(self, system_prompt: str, user_prompt: str, schema: dict, default: dict) -> dict:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        return self._invoke_structured(schema, messages, default)
+
     def extract_file(
         self,
         file_path: str,

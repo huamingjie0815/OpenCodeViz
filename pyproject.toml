@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeviz"
-version = "0.2.1"
+version = "0.2.2"
 description = "AI-powered local code graph visualization and codebase Q&A tool"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,6 +16,10 @@ dependencies = [
   "langchain-openai>=0.3,<1",
   "langchain-anthropic>=0.3,<1",
   "langchain-google-genai>=2,<3",
+  "tree-sitter>=0.24,<0.25",
+  "tree-sitter-python>=0.23,<0.24",
+  "tree-sitter-javascript>=0.23,<0.24",
+  "tree-sitter-typescript>=0.23,<0.24",
 ]
 
 [project.optional-dependencies]

@@ -245,6 +245,35 @@
             gap: 4px
         }
 
+        .legend-toggle {
+            cursor: pointer;
+            gap: 6px
+        }
+
+        .legend-filter {
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--fg);
+            border-radius: 999px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font: inherit
+        }
+
+        .legend-filter.active {
+            background: rgba(255, 255, 255, .04)
+        }
+
+        .legend-filter:not(.active) {
+            color: var(--fg2);
+            opacity: .62
+        }
+
+        .legend-filter:disabled {
+            cursor: default;
+            opacity: .5
+        }
+
         .legend-dot {
             width: 10px;
             height: 10px;
@@ -1026,16 +1055,25 @@
             </div>
             <svg id="graph-svg"></svg>
             <div id="legend">
-                <label class="legend-item" style="cursor:pointer;gap:6px;align-items:center;display:flex;">
+                <label class="legend-item legend-toggle">
                     <input id="label-toggle" type="checkbox" checked>
                     <span>label</span>
                 </label>
-                <div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>class</div>
-                <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>function</div>
-                <div class="legend-item"><span class="legend-dot" style="background:var(--purple)"></span>method</div>
-                <div class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span>interface
-                </div>
-                <div class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>module</div>
+                <button class="legend-item legend-filter active" type="button" data-code-type="class" aria-pressed="true">
+                    <span class="legend-dot" style="background:var(--accent)"></span>class
+                </button>
+                <button class="legend-item legend-filter active" type="button" data-code-type="function" aria-pressed="true">
+                    <span class="legend-dot" style="background:var(--green)"></span>function
+                </button>
+                <button class="legend-item legend-filter active" type="button" data-code-type="method" aria-pressed="true">
+                    <span class="legend-dot" style="background:var(--purple)"></span>method
+                </button>
+                <button class="legend-item legend-filter active" type="button" data-code-type="interface" aria-pressed="true">
+                    <span class="legend-dot" style="background:var(--yellow)"></span>interface
+                </button>
+                <button class="legend-item legend-filter active" type="button" data-code-type="module" aria-pressed="true">
+                    <span class="legend-dot" style="background:var(--orange)"></span>module
+                </button>
             </div>
             <div class="tooltip" id="tooltip" style="display:none"></div>
         </div>
@@ -1066,6 +1104,8 @@
     <script src="vendor/marked.min.js"></script>
     <script src="architecture-layout.js"></script>
     <script src="architecture-interactions.js"></script>
+    <script src="code-legend-filter.js"></script>
+    <script src="code-layout.js"></script>
     <script src="flow-layout.js"></script>
     <script src="flow-interactions.js"></script>
     <script src="flow-search.js"></script>
