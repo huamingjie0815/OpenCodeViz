@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import webbrowser
 from datetime import UTC, datetime
@@ -34,6 +35,8 @@ from codeviz.storage import (
     load_chat_turn,
     load_chat_session,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CodeVizProject:
@@ -162,7 +165,7 @@ class CodeVizProject:
                     analyze_project(self.root, self.status, self.config)
                 self._resolve_current_dir()
             except Exception:
-                pass
+                logger.exception("Background analysis failed")
 
         self._analysis_thread = threading.Thread(target=worker, daemon=True)
         self._analysis_thread.start()

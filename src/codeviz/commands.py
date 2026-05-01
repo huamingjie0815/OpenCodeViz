@@ -16,12 +16,7 @@ def run_command(args: Namespace) -> None:
 
     project = CodeVizProject(Path(args.project).resolve())
 
-    if args.command == "analyze":
-        result = project.run_live_analysis(
-            port=args.port,
-            open_browser=not args.no_browser,
-        )
-    elif args.command == "reanalyze":
+    if args.command in {"analyze", "reanalyze"}:
         result = project.run_live_analysis(
             port=args.port,
             open_browser=not args.no_browser,

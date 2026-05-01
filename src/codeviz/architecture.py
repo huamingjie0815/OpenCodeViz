@@ -194,13 +194,18 @@ def _sorted_flow_edges(edges: list[EdgeRecord]) -> list[EdgeRecord]:
     )
 
 
+DEFAULT_FLOW_MAX_DEPTH = 4
+DEFAULT_FLOW_MAX_BRANCH = 4
+DEFAULT_FLOW_MAX_NODES = 24
+
+
 def build_flow_payload(
     entry_ref: str,
     entities: list[EntityRecord],
     edges: list[EdgeRecord],
-    max_depth: int = 4,
-    max_branch_per_node: int = 4,
-    max_nodes: int = 24,
+    max_depth: int = DEFAULT_FLOW_MAX_DEPTH,
+    max_branch_per_node: int = DEFAULT_FLOW_MAX_BRANCH,
+    max_nodes: int = DEFAULT_FLOW_MAX_NODES,
 ) -> ArchitectureFlow:
     entity_by_id = {entity.entity_id: entity for entity in entities}
     outgoing = _build_flow_outgoing(edges)

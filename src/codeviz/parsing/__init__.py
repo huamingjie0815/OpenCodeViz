@@ -5,7 +5,7 @@ from codeviz.parsing.base import (
     ParseInheritance,
     ParseResult,
 )
-from codeviz.parsing.extractor import ASTExtractor
+from codeviz.parsing.ast_extractor import ASTExtractor
 from codeviz.parsing.registry import get_parser, register_parser
 
 __all__ = [
