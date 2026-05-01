@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
-from codeviz.extractor import LLMExtractor
+from codeviz.extractor import LLMExtractor, _parse_llm_json
 from codeviz.fingerprint import compute_fingerprint, detect_language, iter_source_files
 from codeviz.architecture import build_architecture_snapshot
 from codeviz.parsing import ASTExtractor
@@ -19,7 +19,12 @@ from codeviz.models import (
     ProjectInfo,
     ProjectStatus,
 )
-from codeviz.resolution.deterministic import _build_cross_file_relation_edges, resolve_file
+from codeviz.resolution.deterministic import (
+    _build_cross_file_edges,
+    _build_cross_file_relation_edges,
+    _resolve_import_url,
+    resolve_file,
+)
 from codeviz.resolution.fallback import resolve_unresolved_relations
 from codeviz.runtime_config import extractor_mode, fallback_mode
 from codeviz.storage import (
@@ -28,8 +33,6 @@ from codeviz.storage import (
     append_event,
     clear_events,
     create_version_dir,
-    load_entities,
-    load_edges,
     save_documents,
     save_architecture,
     save_edges,
@@ -59,183 +62,7 @@ def _build_file_entity_index(
 
 
 
-_ALIAS_PREFIXES = ("@/", "~/", "~", "src/", "lib/", "app/", "components/", "utils/", "pages/")
-_SOURCE_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
-
-
-def _resolve_import_url(
-    url: str,
-    importing_file: str,
-    known_files: set[str],
-) -> str | None:
-    """Resolve an import url to a known file path using multi-tier fuzzy matching.
-
-    Strategy 0: Python dotted module path (codeviz.models -> codeviz/models.py)
-    Strategy 1: relative path exact resolution (./foo, ../bar)
-    Strategy 2: filename stem fuzzy match (aliases, bare names)
-    Strategy 3: longest common suffix disambiguation (multiple stem matches)
-    """
-    if not url:
-        return None
-
-    # Strategy 0: Python dotted module path
-    # Detect: contains dots, no slashes, and not a relative path
-    if "." in url and "/" not in url and not url.startswith("."):
-        # Convert dots to path separators: codeviz.models -> codeviz/models
-        dotted_path = url.replace(".", "/")
-        # Try with each source extension
-        for ext in _SOURCE_EXTENSIONS:
-            candidate = dotted_path + ext
-            if candidate in known_files:
-                return candidate
-        # Try matching as a suffix of known file paths (handles src/codeviz/models.py)
-        dotted_parts = dotted_path.split("/")
-        suffix_matches: list[str] = []
-        for f in known_files:
-            f_no_ext = Path(f).with_suffix("").as_posix()
-            f_parts = f_no_ext.split("/")
-            if len(f_parts) >= len(dotted_parts) and f_parts[-len(dotted_parts):] == dotted_parts:
-                suffix_matches.append(f)
-        if len(suffix_matches) == 1:
-            return suffix_matches[0]
-        # If multiple matches, prefer shortest path (closest to direct module)
-        if suffix_matches:
-            suffix_matches.sort(key=len)
-            return suffix_matches[0]
-        # Also try matching just the last segment as a stem (foo.bar.baz -> baz)
-        last_segment = dotted_parts[-1]
-        stem_hits = [f for f in known_files if Path(f).stem == last_segment]
-        if len(stem_hits) == 1:
-            return stem_hits[0]
-        # Multiple stem hits: disambiguate with suffix matching
-        if len(stem_hits) > 1:
-            best: list[tuple[str, int]] = []
-            for f in stem_hits:
-                f_parts = Path(f).with_suffix("").parts
-                count = 0
-                for fp, dp in zip(reversed(f_parts), reversed(dotted_parts)):
-                    if fp == dp:
-                        count += 1
-                    else:
-                        break
-                best.append((f, count))
-            best.sort(key=lambda x: -x[1])
-            if best[0][1] > 0 and (len(best) == 1 or best[0][1] > best[1][1]):
-                return best[0][0]
-
-    if "/" not in url and "." not in url and Path(importing_file).suffix in {".py", ".pyi"}:
-        sibling_base = (Path(importing_file).parent / url).as_posix().lstrip("/")
-        for ext in (".py", ".pyi"):
-            candidate = sibling_base + ext
-            if candidate in known_files:
-                return candidate
-
-    # Strategy 1: relative path
-    if url.startswith("."):
-        base = Path(importing_file).parent / url
-        # Normalise to posix without leading slash
-        base_str = base.as_posix().lstrip("/")
-        candidates = [base_str] + [base_str + ext for ext in _SOURCE_EXTENSIONS]
-        for c in candidates:
-            if c in known_files:
-                return c
-        # Also try stripping an existing extension then re-adding (handles ./foo.js -> foo.ts)
-        base_no_ext = Path(base_str).with_suffix("").as_posix()
-        if base_no_ext != base_str:
-            for ext in _SOURCE_EXTENSIONS:
-                c = base_no_ext + ext
-                if c in known_files:
-                    return c
-
-    # Strategy 2: stem match
-    # For dotted urls without slashes, use the last dot-segment as the stem
-    # (avoids Path treating dots as file extensions: Path("codeviz.models").stem = "codeviz")
-    last_segment = url.split("/")[-1]
-    if "." in last_segment and "/" not in url:
-        stem = last_segment.rsplit(".", 1)[-1]
-    else:
-        stem = Path(last_segment).stem
-    # Skip bare package names: no "/" in url and no "." in stem  -> stdlib/npm package
-    if "/" not in url and "." not in stem:
-        return None
-    if not stem:
-        return None
-
-    stem_matches = [f for f in known_files if Path(f).stem == stem]
-    if not stem_matches:
-        return None
-    if len(stem_matches) == 1:
-        return stem_matches[0]
-
-    # Strategy 3: longest common suffix disambiguation
-    # Strip common alias prefixes from url to get a bare relative path
-    bare = url
-    for prefix in _ALIAS_PREFIXES:
-        if bare.startswith(prefix):
-            bare = bare[len(prefix):]
-            break
-    # Remove leading ./ or ../
-    bare = bare.lstrip("./")
-    # For dotted module paths, convert dots to path separators for suffix matching
-    if "." in bare and "/" not in bare:
-        bare = bare.replace(".", "/")
-    bare_parts = [p for p in bare.replace("\\", "/").split("/") if p]
-
-    def _common_suffix_len(file_path: str) -> int:
-        file_parts = Path(file_path).with_suffix("").parts
-        count = 0
-        for fp, bp in zip(reversed(file_parts), reversed(bare_parts)):
-            if fp == bp:
-                count += 1
-            else:
-                break
-        return count
-
-    scored = [(f, _common_suffix_len(f)) for f in stem_matches]
-    max_score = max(s for _, s in scored)
-    if max_score == 0:
-        return None
-    best_matches = [f for f, s in scored if s == max_score]
-    return best_matches[0] if len(best_matches) == 1 else None
-
-
-def _build_cross_file_edges(
-    pending_imports: dict[str, list[tuple[str, str, str]]],
-    file_entity_index: dict[str, dict[str, str]],
-    resolved_files: set[str],
-) -> list[EdgeRecord]:
-    """Build cross-file EdgeRecords from pending_imports where target file is now known.
-
-    pending_imports: {target_file: [(source_entity_id, entity_name, importing_file)]}
-    Returns new EdgeRecords and removes resolved items from pending_imports in-place.
-    """
-    new_edges: list[EdgeRecord] = []
-    resolved_targets = [t for t in list(pending_imports.keys()) if t in resolved_files]
-
-    for target_file in resolved_targets:
-        target_index = file_entity_index.get(target_file, {})
-        remaining: list[tuple[str, str, str]] = []
-        for source_id, name, importing_file in pending_imports[target_file]:
-            target_id = target_index.get(name)
-            if target_id:
-                edge_id = f"imports:{source_id}->{target_id}"
-                new_edges.append(EdgeRecord(
-                    edge_id=edge_id,
-                    source_id=source_id,
-                    target_id=target_id,
-                    edge_type="imports",
-                    file_path=importing_file,
-                    line=0,
-                    description=f"imported from {target_file}",
-                ))
-            else:
-                remaining.append((source_id, name, importing_file))
-        if remaining:
-            pending_imports[target_file] = remaining
-        else:
-            del pending_imports[target_file]
-
-    return new_edges
+MAX_FILE_SIZE = 50_000
 
 
 def _dedup_and_resolve(
@@ -472,7 +299,7 @@ def analyze_project(
             full_path = root / file_path
             content = full_path.read_text(encoding="utf-8", errors="replace")
             # Skip very large files (>50KB) to avoid token limits
-            if len(content) > 50_000:
+            if len(content) > MAX_FILE_SIZE:
                 emit("file.skipped", {"file": file_path, "reason": "too large"})
                 continue
 
@@ -733,7 +560,6 @@ def extract_project_info(
         {"role": "system", "content": "You are a project analyst. Summarize the project based on its documentation. Output ONLY valid JSON."},
         {"role": "user", "content": prompt},
     ]
-    from codeviz.extractor import _parse_llm_json
     response = extractor.llm.invoke(messages)
     text = response.content if hasattr(response, "content") else str(response)
     data = _parse_llm_json(text)

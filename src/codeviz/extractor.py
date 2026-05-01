@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import os
 import re
-from pathlib import Path
-from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
 from codeviz.models import EdgeRecord, EntityRecord, FileRecord
-from codeviz.fingerprint import detect_language
-from codeviz.runtime_config import load_runtime_config, runtime_api_key, runtime_value
+from codeviz.runtime_config import init_llm
 
 EXTRACTION_SYSTEM_PROMPT = """\
 You are a code analysis engine. Given a source file, extract all code entities and their relationships.
@@ -151,40 +146,6 @@ CROSS_FILE_SCHEMA = {
 }
 
 
-def _init_chat_model(config: dict | None = None):
-    from langchain.chat_models import init_chat_model
-
-    cfg = config or {}
-    provider = runtime_value("CODEVIZ_PROVIDER", cfg.get("provider", "openai"))
-    model = runtime_value("CODEVIZ_MODEL", cfg.get("model", ""))
-    api_key = runtime_api_key(cfg)
-    base_url = runtime_value("CODEVIZ_BASE_URL", cfg.get("baseUrl", ""))
-
-    if not model:
-        model = {
-            "openai": "gpt-4o-mini",
-            "anthropic": "claude-sonnet-4-20250514",
-            "google_genai": "gemini-2.0-flash",
-        }.get(provider, "gpt-4o-mini")
-
-    env_map = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "google_genai": "GOOGLE_API_KEY",
-    }
-    env_var = env_map.get(provider)
-    if api_key and env_var and not os.environ.get(env_var):
-        os.environ[env_var] = api_key
-
-    max_tokens = int(runtime_value("CODEVIZ_MAX_TOKENS", str(cfg.get("maxTokens", 16384))))
-
-    kwargs: dict = {"model_provider": provider, "max_tokens": max_tokens}
-    if base_url:
-        kwargs["base_url"] = base_url
-
-    return init_chat_model(model, **kwargs)
-
-
 def _parse_llm_json(text: str) -> dict:
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -216,7 +177,7 @@ class LLMExtractor:
     @property
     def llm(self):
         if self._llm is None:
-            self._llm = _init_chat_model(self.config)
+            self._llm = init_llm(self.config)
         return self._llm
 
     def _invoke_structured(self, schema: dict, messages: list, fallback_default: dict) -> dict:

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from codeviz.models import ProjectStatus
-from codeviz.runtime_config import runtime_api_key, runtime_value
+from codeviz.runtime_config import init_llm, resolve_llm_config, runtime_api_key, runtime_value
 from codeviz.storage import (
     get_entity_neighbors,
     load_chat_session,
@@ -124,33 +123,10 @@ class ProjectQAAgent:
         return "\n".join(parts)
 
     def _ask_via_agent(self, question: str, context: str, on_step: Callable[[dict], None] | None = None) -> dict:
-        from langchain.chat_models import init_chat_model
-
-        provider = runtime_value("CODEVIZ_PROVIDER", self.config.get("provider", "openai"))
-        model = runtime_value("CODEVIZ_MODEL", self.config.get("model", ""))
-        api_key = runtime_api_key(self.config)
-        base_url = runtime_value("CODEVIZ_BASE_URL", self.config.get("baseUrl", ""))
-
-        if not model:
-            model = {
-                "openai": "gpt-4o-mini",
-                "anthropic": "claude-sonnet-4-20250514",
-                "google_genai": "gemini-2.0-flash",
-            }.get(provider, "gpt-4o-mini")
-
-        env_map = {
-            "openai": "OPENAI_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-            "google_genai": "GOOGLE_API_KEY",
-        }
-        env_var = env_map.get(provider)
-        if api_key and env_var and not os.environ.get(env_var):
-            os.environ[env_var] = api_key
-
-        kwargs: dict = {"model_provider": provider}
-        if base_url:
-            kwargs["base_url"] = base_url
-        llm = init_chat_model(model, **kwargs)
+        resolved = resolve_llm_config(self.config)
+        model = resolved["model"]
+        provider = resolved["provider"]
+        llm = init_llm(self.config)
 
         tools = self._build_tools()
 
